@@ -16,23 +16,25 @@ import {
 import MainLayout from '../components/layout/MainLayout';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import LoadingSpinner from '../components/ui/LoadingSpinner';
+import ErrorMessage from '../components/ui/ErrorMessage';
 import { useApi } from '../hooks/useApi';
 import { dashboardAPI } from '../services/api';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
 
-  const { data: stats, loading: statsLoading } = useApi(
+  const { data: stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useApi(
     () => dashboardAPI.getStats(),
     []
   );
 
-  const { data: recentActivity, loading: activityLoading } = useApi(
+  const { data: recentActivity, loading: activityLoading, error: activityError, refetch: refetchActivity } = useApi(
     () => dashboardAPI.getRecentActivity(10),
     []
   );
 
-  const { data: upcomingRenewals, loading: renewalsLoading } = useApi(
+  const { data: upcomingRenewals, loading: renewalsLoading, error: renewalsError, refetch: refetchRenewals } = useApi(
     () => dashboardAPI.getUpcomingRenewals(5),
     []
   );
@@ -73,9 +75,15 @@ const Dashboard: React.FC = () => {
   if (statsLoading) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
+        <LoadingSpinner size="lg" text="Loading dashboard..." className="h-64" />
+      </MainLayout>
+    );
+  }
+
+  if (statsError) {
+    return (
+      <MainLayout>
+        <ErrorMessage message={statsError} onRetry={refetchStats} />
       </MainLayout>
     );
   }
@@ -119,9 +127,9 @@ const Dashboard: React.FC = () => {
             }
           >
             {activityLoading ? (
-              <div className="flex items-center justify-center h-32">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              </div>
+              <LoadingSpinner className="h-32" />
+            ) : activityError ? (
+              <ErrorMessage message={activityError} onRetry={refetchActivity} showIcon={false} />
             ) : (
               <div className="divide-y divide-gray-200">
                 {recentActivity && recentActivity.map((activity: any) => (
@@ -175,9 +183,9 @@ const Dashboard: React.FC = () => {
             }
           >
             {renewalsLoading ? (
-              <div className="flex items-center justify-center h-32">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              </div>
+              <LoadingSpinner className="h-32" />
+            ) : renewalsError ? (
+              <ErrorMessage message={renewalsError} onRetry={refetchRenewals} showIcon={false} />
             ) : (
               <div className="space-y-4">
                 {upcomingRenewals && upcomingRenewals.slice(0, 3).map((renewal: any) => (

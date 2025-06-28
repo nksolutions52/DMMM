@@ -4,6 +4,8 @@ import { ArrowLeft } from "lucide-react";
 import MainLayout from "../components/layout/MainLayout";
 import Input from "../components/ui/Input";
 import Button from "../components/ui/Button";
+import LoadingSpinner from "../components/ui/LoadingSpinner";
+import ErrorMessage from "../components/ui/ErrorMessage";
 import { Accordion, AccordionItem } from "../components/ui/Accordion";
 import { useApi, useApiMutation } from "../hooks/useApi";
 import { vehiclesAPI } from "../services/api";
@@ -85,7 +87,7 @@ const VehicleForm: React.FC = () => {
   const [activeTab, setActiveTab] = useState("personal");
   const [form, setForm] = useState(initialState);
 
-  const { data: vehicle, loading } = useApi(
+  const { data: vehicle, loading, error } = useApi(
     () => id ? vehiclesAPI.getById(id) : Promise.resolve(null),
     [id]
   );
@@ -183,9 +185,15 @@ const VehicleForm: React.FC = () => {
   if (loading) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
+        <LoadingSpinner size="lg" text="Loading vehicle data..." className="h-64" />
+      </MainLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <MainLayout>
+        <ErrorMessage message={`Error loading vehicle: ${error}`} />
       </MainLayout>
     );
   }

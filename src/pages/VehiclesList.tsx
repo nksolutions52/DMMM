@@ -4,6 +4,8 @@ import { Car, Search, Filter, Plus, Eye, Edit, Trash2 } from 'lucide-react';
 import MainLayout from '../components/layout/MainLayout';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import LoadingSpinner from '../components/ui/LoadingSpinner';
+import ErrorMessage from '../components/ui/ErrorMessage';
 import { useApi, useApiMutation } from '../hooks/useApi';
 import { vehiclesAPI } from '../services/api';
 
@@ -46,9 +48,7 @@ const VehiclesList: React.FC = () => {
   if (loading) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
+        <LoadingSpinner size="lg" text="Loading vehicles..." className="h-64" />
       </MainLayout>
     );
   }
@@ -56,10 +56,7 @@ const VehiclesList: React.FC = () => {
   if (error) {
     return (
       <MainLayout>
-        <div className="text-center py-12">
-          <p className="text-red-600 mb-4">Error loading vehicles: {error}</p>
-          <Button onClick={refetch}>Retry</Button>
-        </div>
+        <ErrorMessage message={`Error loading vehicles: ${error}`} onRetry={refetch} />
       </MainLayout>
     );
   }
