@@ -16,10 +16,26 @@ import {
 import MainLayout from '../components/layout/MainLayout';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import { mockDashboardStats, mockServiceOrders, mockRenewalDues } from '../data/mockData';
+import { useApi } from '../hooks/useApi';
+import { dashboardAPI } from '../services/api';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
+
+  const { data: stats, loading: statsLoading } = useApi(
+    () => dashboardAPI.getStats(),
+    []
+  );
+
+  const { data: recentActivity, loading: activityLoading } = useApi(
+    () => dashboardAPI.getRecentActivity(10),
+    []
+  );
+
+  const { data: upcomingRenewals, loading: renewalsLoading } = useApi(
+    () => dashboardAPI.getUpcomingRenewals(5),
+    []
+  );
 
   const getStatIcon = (iconName: string) => {
     switch (iconName) {
@@ -41,8 +57,8 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const getActivityIcon = (activity: typeof mockServiceOrders[0]) => {
-    switch (activity.serviceType.toLowerCase()) {
+  const getActivityIcon = (serviceType: string) => {
+    switch (serviceType.toLowerCase()) {
       case 'transfer of ownership':
         return <FilePlus className="h-4 w-4 sm:h-5 sm:w-5 text-blue-700" />;
       case 'insurance renewal':
@@ -54,19 +70,28 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  if (statsLoading) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </MainLayout>
+    );
+  }
+
   return (
     <MainLayout>
       <div className="space-y-6 sm:space-y-8 mt-3">
         <div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
-            {mockDashboardStats.map((stat) => (
+            {stats && stats.map((stat: any) => (
               <div
                 key={stat.title}
                 className="flex items-center bg-white/80 backdrop-blur-md rounded-xl shadow-md p-3 sm:p-6 border border-gray-100 hover:shadow-lg transition"
               >
                 <div
                   className={`w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full mr-3 sm:mr-4 text-2xl ${getColorClass(stat.color)}`}
-                  style={{ backgroundColor: stat.bgColor }}
                 >
                   {getStatIcon(stat.icon)}
                 </div>
@@ -93,42 +118,48 @@ const Dashboard: React.FC = () => {
               </Button>
             }
           >
-            <div className="divide-y divide-gray-200">
-              {mockServiceOrders.map((activity) => (
-                <div 
-                  key={activity.id} 
-                  className="py-3 flex items-start cursor-pointer hover:bg-gray-50 px-3 rounded-md transition-colors"
-                  onClick={() => navigate('/service-orders')}
-                >
-                  <div className="bg-blue-100 p-2 rounded-lg mr-3 sm:mr-4 flex-shrink-0">
-                    {getActivityIcon(activity)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-1 gap-1">
-                      <h4 className="text-sm font-medium text-gray-800 truncate">
-                        {activity.serviceType}
-                      </h4>
-                      <span className="text-xs text-gray-500 flex-shrink-0">
-                        {new Date(activity.createdAt).toLocaleDateString()} {new Date(activity.createdAt).toLocaleTimeString()}
-                      </span>
+            {activityLoading ? (
+              <div className="flex items-center justify-center h-32">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-200">
+                {recentActivity && recentActivity.map((activity: any) => (
+                  <div 
+                    key={activity.id} 
+                    className="py-3 flex items-start cursor-pointer hover:bg-gray-50 px-3 rounded-md transition-colors"
+                    onClick={() => navigate('/service-orders')}
+                  >
+                    <div className="bg-blue-100 p-2 rounded-lg mr-3 sm:mr-4 flex-shrink-0">
+                      {getActivityIcon(activity.service_type)}
                     </div>
-                    <p className="text-sm text-gray-600 truncate">
-                      Vehicle: <span className="font-medium">{activity.vehicleNumber}</span>
-                    </p>
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mt-1 gap-1">
-                      <p className="text-xs text-gray-500 truncate">By: {activity.agentName}</p>
-                      <span className={`text-xs px-2 py-1 rounded-full flex-shrink-0 ${
-                        activity.status === 'completed' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {activity.status}
-                      </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-1 gap-1">
+                        <h4 className="text-sm font-medium text-gray-800 truncate">
+                          {activity.service_type}
+                        </h4>
+                        <span className="text-xs text-gray-500 flex-shrink-0">
+                          {new Date(activity.created_at).toLocaleDateString()} {new Date(activity.created_at).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 truncate">
+                        Vehicle: <span className="font-medium">{activity.registration_number}</span>
+                      </p>
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mt-1 gap-1">
+                        <p className="text-xs text-gray-500 truncate">By: {activity.agent_name}</p>
+                        <span className={`text-xs px-2 py-1 rounded-full flex-shrink-0 ${
+                          activity.status === 'completed' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {activity.status}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </Card>
 
           <Card 
@@ -143,50 +174,56 @@ const Dashboard: React.FC = () => {
               </Button>
             }
           >
-            <div className="space-y-4">
-              {mockRenewalDues.slice(0, 3).map((renewal) => (
-                <div 
-                  key={renewal.id}
-                  className={`p-3 ${
-                    renewal.status === 'overdue' 
-                      ? 'bg-red-50 border-red-100' 
-                      : renewal.daysLeft <= 7 
-                      ? 'bg-yellow-50 border-yellow-100'
-                      : 'bg-blue-50 border-blue-100'
-                  } border rounded-lg cursor-pointer`}
-                  onClick={() => navigate('/renewal-dues')}
-                >
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2 gap-1">
-                    <h4 className={`text-sm font-medium ${
-                      renewal.status === 'overdue'
-                        ? 'text-red-800'
-                        : renewal.daysLeft <= 7
-                        ? 'text-yellow-800'
-                        : 'text-blue-800'
-                    } truncate`}>
-                      {renewal.renewalType} Renewal
-                    </h4>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded flex-shrink-0 ${
-                      renewal.status === 'overdue'
-                        ? 'bg-red-200 text-red-800'
-                        : renewal.daysLeft <= 7
-                        ? 'bg-yellow-200 text-yellow-800'
-                        : 'bg-blue-200 text-blue-800'
-                    }`}>
-                      {renewal.status === 'overdue'
-                        ? `${Math.abs(renewal.daysLeft)} days overdue`
-                        : `${renewal.daysLeft} days left`}
-                    </span>
+            {renewalsLoading ? (
+              <div className="flex items-center justify-center h-32">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {upcomingRenewals && upcomingRenewals.slice(0, 3).map((renewal: any) => (
+                  <div 
+                    key={renewal.id}
+                    className={`p-3 ${
+                      renewal.status === 'overdue' 
+                        ? 'bg-red-50 border-red-100' 
+                        : renewal.days_left <= 7 
+                        ? 'bg-yellow-50 border-yellow-100'
+                        : 'bg-blue-50 border-blue-100'
+                    } border rounded-lg cursor-pointer`}
+                    onClick={() => navigate('/renewal-dues')}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2 gap-1">
+                      <h4 className={`text-sm font-medium ${
+                        renewal.status === 'overdue'
+                          ? 'text-red-800'
+                          : renewal.days_left <= 7
+                          ? 'text-yellow-800'
+                          : 'text-blue-800'
+                      } truncate`}>
+                        {renewal.renewal_type} Renewal
+                      </h4>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded flex-shrink-0 ${
+                        renewal.status === 'overdue'
+                          ? 'bg-red-200 text-red-800'
+                          : renewal.days_left <= 7
+                          ? 'bg-yellow-200 text-yellow-800'
+                          : 'bg-blue-200 text-blue-800'
+                      }`}>
+                        {renewal.status === 'overdue'
+                          ? `${Math.abs(renewal.days_left)} days overdue`
+                          : `${renewal.days_left} days left`}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-1 truncate">
+                      {renewal.registration_number} - {renewal.registered_owner_name}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Due: {new Date(renewal.due_date).toLocaleDateString()}
+                    </p>
                   </div>
-                  <p className="text-sm text-gray-600 mb-1 truncate">
-                    {renewal.vehicleNumber} - {renewal.ownerName}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Due: {new Date(renewal.dueDate).toLocaleDateString()}
-                  </p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
       </div>

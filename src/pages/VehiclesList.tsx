@@ -4,34 +4,69 @@ import { Car, Search, Filter, Plus, Eye, Edit, Trash2 } from 'lucide-react';
 import MainLayout from '../components/layout/MainLayout';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import { mockVehicles } from '../data/mockData';
+import { useApi, useApiMutation } from '../hooks/useApi';
+import { vehiclesAPI } from '../services/api';
 
 const VehiclesList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filteredVehicles, setFilteredVehicles] = useState(mockVehicles);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedType, setSelectedType] = useState('');
+
+  const { data: vehiclesData, loading, error, refetch } = useApi(
+    () => vehiclesAPI.getAll({ 
+      page: currentPage, 
+      limit: 10, 
+      search: searchTerm,
+      type: selectedType 
+    }),
+    [currentPage, searchTerm, selectedType]
+  );
+
+  const { mutate: deleteVehicle } = useApiMutation();
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const term = e.target.value;
-    setSearchTerm(term);
-
-    const filtered = mockVehicles.filter(vehicle =>
-      vehicle.registrationNumber.toLowerCase().includes(term.toLowerCase()) ||
-      vehicle.registeredOwnerName.toLowerCase().includes(term.toLowerCase()) ||
-      vehicle.chassisNumber.toLowerCase().includes(term.toLowerCase())
-    );
-
-    setFilteredVehicles(filtered);
+    setSearchTerm(e.target.value);
+    setCurrentPage(1); // Reset to first page when searching
   };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this vehicle?')) {
+      try {
+        await deleteVehicle(() => vehiclesAPI.delete(id));
+        refetch(); // Refresh the list
+      } catch (error) {
+        console.error('Delete failed:', error);
+      }
+    }
+  };
+
+  const vehicles = vehiclesData?.vehicles || [];
+  const pagination = vehiclesData?.pagination;
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <MainLayout>
+        <div className="text-center py-12">
+          <p className="text-red-600 mb-4">Error loading vehicles: {error}</p>
+          <Button onClick={refetch}>Retry</Button>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-        <div className="flex-1">
-          {/* Empty div to maintain layout */}
-        </div>
-      </div>
-
-      <Card className="mb-8">
+      <Card className="mb-8 mt-3">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
           <div className="relative flex-1">
             <Search
@@ -47,13 +82,15 @@ const VehiclesList: React.FC = () => {
             />
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <Button
-              variant="outline"
-              leftIcon={<Filter size={18} />}
-              className="w-full sm:w-auto"
+            <select
+              value={selectedType}
+              onChange={(e) => setSelectedType(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              Filter
-            </Button>
+              <option value="">All Types</option>
+              <option value="Transport">Transport</option>
+              <option value="Non Transport">Non Transport</option>
+            </select>
             <Link to="/vehicles/add">
               <Button leftIcon={<Plus size={18} />} className="w-full sm:w-auto">
                 Add Vehicle
@@ -64,8 +101,8 @@ const VehiclesList: React.FC = () => {
 
         {/* Mobile Card View */}
         <div className="block lg:hidden space-y-4">
-          {filteredVehicles.length > 0 ? (
-            filteredVehicles.map((vehicle) => (
+          {vehicles.length > 0 ? (
+            vehicles.map((vehicle: any) => (
               <div key={vehicle.id} className="bg-gray-50 rounded-lg p-4 border">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center">
@@ -73,8 +110,8 @@ const VehiclesList: React.FC = () => {
                       <Car className="h-5 w-5 text-blue-700" />
                     </div>
                     <div>
-                      <div className="text-sm font-medium text-gray-900">{vehicle.registrationNumber}</div>
-                      <div className="text-xs text-gray-500">Reg. Date: {new Date(vehicle.dateOfRegistration).toLocaleDateString()}</div>
+                      <div className="text-sm font-medium text-gray-900">{vehicle.registration_number}</div>
+                      <div className="text-xs text-gray-500">Reg. Date: {new Date(vehicle.date_of_registration).toLocaleDateString()}</div>
                     </div>
                   </div>
                   <span
@@ -91,19 +128,19 @@ const VehiclesList: React.FC = () => {
                 <div className="space-y-2 mb-3">
                   <div>
                     <span className="text-xs text-gray-500">Owner:</span>
-                    <span className="text-sm font-medium text-gray-900 ml-1">{vehicle.registeredOwnerName}</span>
+                    <span className="text-sm font-medium text-gray-900 ml-1">{vehicle.registered_owner_name}</span>
                   </div>
                   <div>
                     <span className="text-xs text-gray-500">Mobile:</span>
-                    <span className="text-sm text-gray-700 ml-1">{vehicle.mobileNumber}</span>
+                    <span className="text-sm text-gray-700 ml-1">{vehicle.mobile_number}</span>
                   </div>
                   <div>
                     <span className="text-xs text-gray-500">Vehicle:</span>
-                    <span className="text-sm text-gray-700 ml-1">{vehicle.makersName} {vehicle.makersClassification}</span>
+                    <span className="text-sm text-gray-700 ml-1">{vehicle.makers_name} {vehicle.makers_classification}</span>
                   </div>
                   <div>
                     <span className="text-xs text-gray-500">Details:</span>
-                    <span className="text-sm text-gray-700 ml-1">{vehicle.colour} | {vehicle.fuelUsed}</span>
+                    <span className="text-sm text-gray-700 ml-1">{vehicle.colour} | {vehicle.fuel_used}</span>
                   </div>
                 </div>
 
@@ -118,7 +155,11 @@ const VehiclesList: React.FC = () => {
                     <Link to={`/vehicles/edit/${vehicle.id}`} className="text-amber-600 hover:text-amber-800" title="Edit">
                       <Edit size={18} />
                     </Link>
-                    <button className="text-red-600 hover:text-red-800" title="Delete">
+                    <button 
+                      onClick={() => handleDelete(vehicle.id)}
+                      className="text-red-600 hover:text-red-800" 
+                      title="Delete"
+                    >
                       <Trash2 size={18} />
                     </button>
                   </div>
@@ -158,8 +199,8 @@ const VehiclesList: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredVehicles.length > 0 ? (
-                filteredVehicles.map((vehicle) => (
+              {vehicles.length > 0 ? (
+                vehicles.map((vehicle: any) => (
                   <tr key={vehicle.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
@@ -167,18 +208,18 @@ const VehiclesList: React.FC = () => {
                           <Car className="h-5 w-5 text-blue-700" />
                         </div>
                         <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">{vehicle.registrationNumber}</div>
-                          <div className="text-sm text-gray-500">Reg. Date: {new Date(vehicle.dateOfRegistration).toLocaleDateString()}</div>
+                          <div className="text-sm font-medium text-gray-900">{vehicle.registration_number}</div>
+                          <div className="text-sm text-gray-500">Reg. Date: {new Date(vehicle.date_of_registration).toLocaleDateString()}</div>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{vehicle.registeredOwnerName}</div>
-                      <div className="text-sm text-gray-500">{vehicle.mobileNumber}</div>
+                      <div className="text-sm font-medium text-gray-900">{vehicle.registered_owner_name}</div>
+                      <div className="text-sm text-gray-500">{vehicle.mobile_number}</div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-sm text-gray-900">{vehicle.makersName} {vehicle.makersClassification}</div>
-                      <div className="text-sm text-gray-500">{vehicle.colour} | {vehicle.fuelUsed}</div>
+                      <div className="text-sm text-gray-900">{vehicle.makers_name} {vehicle.makers_classification}</div>
+                      <div className="text-sm text-gray-500">{vehicle.colour} | {vehicle.fuel_used}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
@@ -204,7 +245,11 @@ const VehiclesList: React.FC = () => {
                         <Link to={`/vehicles/edit/${vehicle.id}`} className="text-amber-600 hover:text-amber-800" title="Edit">
                           <Edit size={18} />
                         </Link>
-                        <button className="text-red-600 hover:text-red-800" title="Delete">
+                        <button 
+                          onClick={() => handleDelete(vehicle.id)}
+                          className="text-red-600 hover:text-red-800" 
+                          title="Delete"
+                        >
                           <Trash2 size={18} />
                         </button>
                       </div>
@@ -221,6 +266,36 @@ const VehiclesList: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {pagination && pagination.totalPages > 1 && (
+          <div className="mt-6 flex items-center justify-between">
+            <div className="text-sm text-gray-700">
+              Showing {((currentPage - 1) * 10) + 1} to {Math.min(currentPage * 10, pagination.totalCount)} of {pagination.totalCount} results
+            </div>
+            <div className="flex space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(currentPage - 1)}
+                disabled={!pagination.hasPrev}
+              >
+                Previous
+              </Button>
+              <span className="px-3 py-1 text-sm text-gray-700">
+                Page {currentPage} of {pagination.totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(currentPage + 1)}
+                disabled={!pagination.hasNext}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
     </MainLayout>
   );

@@ -4,18 +4,8 @@ import Input from '../components/ui/Input';
 import { Search } from 'lucide-react';
 import MainLayout from '../components/layout/MainLayout';
 import Card from '../components/ui/Card';
-import { Vehicle } from '../types';
-import { mockVehicles } from '../data/mockData';
-
-const services = [
-  { id: 'transfer', name: 'Transfer of Ownership', fee: 1500 },
-  { id: 'permit', name: 'Permit', fee: 1000 },
-  { id: 'hpa', name: 'HPA', fee: 800 },
-  { id: 'hpt', name: 'HPT', fee: 800 },
-  { id: 'fitness', name: 'Fitness', fee: 600 },
-  { id: 'pollution', name: 'Pollution', fee: 300 },
-  { id: 'insurance', name: 'Insurance', fee: 2000 },
-];
+import { useApi, useApiMutation } from '../hooks/useApi';
+import { servicesAPI, vehiclesAPI } from '../services/api';
 
 const stepTitles = ['Select Service', 'Vehicle Details', 'Payment'];
 
@@ -24,28 +14,78 @@ const Services: React.FC = () => {
   const [selectedService, setSelectedService] = useState('');
   const [selectedServiceFee, setSelectedServiceFee] = useState<number | null>(null);
   const [vehicleNumber, setVehicleNumber] = useState('');
-  const [vehicleData, setVehicleData] = useState<Vehicle | null>(null);
+  const [vehicleData, setVehicleData] = useState<any>(null);
   const [discount, setDiscount] = useState<number>(0);
   const [hasSearched, setHasSearched] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  const { data: services, loading: servicesLoading } = useApi(
+    () => servicesAPI.getTypes(),
+    []
+  );
+
+  const { mutate: createOrder, loading: orderLoading } = useApiMutation();
 
   const handleServiceSelect = (serviceId: string) => {
     setSelectedService(serviceId);
-    const service = services.find(s => s.id === serviceId);
+    const service = services?.find((s: any) => s.id === serviceId);
     setSelectedServiceFee(service ? service.fee : null);
     setStep(2);
   };
 
-  const handleVehicleSearch = () => {
+  const handleVehicleSearch = async () => {
     setHasSearched(true);
-    const found = mockVehicles.find(
-      v => v.registrationNumber.toLowerCase() === vehicleNumber.toLowerCase()
-    );
-    setVehicleData(found || null);
+    setSearchLoading(true);
+    
+    try {
+      const response = await vehiclesAPI.searchByRegistration(vehicleNumber);
+      setVehicleData(response.data || response);
+    } catch (error) {
+      setVehicleData(null);
+      console.error('Vehicle search failed:', error);
+    } finally {
+      setSearchLoading(false);
+    }
   };
 
-  const handleSubmit = () => {
-    alert('Service booked!');
+  const handleSubmit = async () => {
+    if (!vehicleData || !selectedService || selectedServiceFee === null) return;
+
+    try {
+      const orderData = {
+        vehicleId: vehicleData.id,
+        serviceType: services?.find((s: any) => s.id === selectedService)?.name || selectedService,
+        amount: Math.max(selectedServiceFee - discount, 0),
+        customerName: vehicleData.registered_owner_name,
+        discount
+      };
+
+      await createOrder(() => servicesAPI.createOrder(orderData));
+      alert('Service order created successfully!');
+      
+      // Reset form
+      setStep(1);
+      setSelectedService('');
+      setSelectedServiceFee(null);
+      setVehicleNumber('');
+      setVehicleData(null);
+      setDiscount(0);
+      setHasSearched(false);
+    } catch (error) {
+      console.error('Order creation failed:', error);
+      alert('Failed to create service order. Please try again.');
+    }
   };
+
+  if (servicesLoading) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
@@ -83,7 +123,7 @@ const Services: React.FC = () => {
           <div>
             <h3 className="text-xl font-semibold mb-6 text-gray-800">Select Service</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-10">
-              {services.map(service => (
+              {services?.map((service: any) => (
                 <button
                   key={service.id}
                   onClick={() => handleServiceSelect(service.id)}
@@ -116,6 +156,7 @@ const Services: React.FC = () => {
                 onClick={handleVehicleSearch}
                 leftIcon={<Search size={18} />}
                 className="px-6 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition"
+                isLoading={searchLoading}
               >
                 Search
               </Button>
@@ -128,23 +169,23 @@ const Services: React.FC = () => {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
                     <div>
                       <span className="block text-xs text-gray-500">Registration Number</span>
-                      <span className="font-medium text-gray-900 break-words">{vehicleData.registrationNumber}</span>
+                      <span className="font-medium text-gray-900 break-words">{vehicleData.registration_number}</span>
                     </div>
                     <div>
                       <span className="block text-xs text-gray-500">Owner Name</span>
-                      <span className="font-medium text-gray-900 break-words">{vehicleData.registeredOwnerName}</span>
+                      <span className="font-medium text-gray-900 break-words">{vehicleData.registered_owner_name}</span>
                     </div>
                     <div>
                       <span className="block text-xs text-gray-500">Mobile Number</span>
-                      <span className="font-medium text-gray-900">{vehicleData.mobileNumber}</span>
+                      <span className="font-medium text-gray-900">{vehicleData.mobile_number}</span>
                     </div>
                     <div>
                       <span className="block text-xs text-gray-500">Aadhar Number</span>
-                      <span className="font-medium text-gray-900">{vehicleData.aadharNumber}</span>
+                      <span className="font-medium text-gray-900">{vehicleData.aadhar_number}</span>
                     </div>
                     <div>
                       <span className="block text-xs text-gray-500">Guardian Info</span>
-                      <span className="font-medium text-gray-900 break-words">{vehicleData.guardianInfo}</span>
+                      <span className="font-medium text-gray-900 break-words">{vehicleData.guardian_info}</span>
                     </div>
                     <div>
                       <span className="block text-xs text-gray-500">Address</span>
@@ -152,7 +193,7 @@ const Services: React.FC = () => {
                     </div>
                     <div>
                       <span className="block text-xs text-gray-500">Type</span>
-                      <span className="font-medium text-gray-900">{(vehicleData as any).type || '-'}</span>
+                      <span className="font-medium text-gray-900">{vehicleData.type || '-'}</span>
                     </div>
                   </div>
                 </div>
@@ -164,15 +205,15 @@ const Services: React.FC = () => {
                     <div className="space-y-4">
                       <div>
                         <span className="block text-xs text-gray-500">Chassis Number</span>
-                        <span className="font-medium text-gray-900 break-all">{vehicleData.chassisNumber}</span>
+                        <span className="font-medium text-gray-900 break-all">{vehicleData.chassis_number}</span>
                       </div>
                       <div>
                         <span className="block text-xs text-gray-500">Engine Number</span>
-                        <span className="font-medium text-gray-900 break-all">{vehicleData.engineNumber}</span>
+                        <span className="font-medium text-gray-900 break-all">{vehicleData.engine_number}</span>
                       </div>
                       <div>
                         <span className="block text-xs text-gray-500">Body Type</span>
-                        <span className="font-medium text-gray-900">{vehicleData.bodyType}</span>
+                        <span className="font-medium text-gray-900">{vehicleData.body_type}</span>
                       </div>
                       <div>
                         <span className="block text-xs text-gray-500">Colour</span>
@@ -180,11 +221,11 @@ const Services: React.FC = () => {
                       </div>
                       <div>
                         <span className="block text-xs text-gray-500">Vehicle Class</span>
-                        <span className="font-medium text-gray-900">{vehicleData.vehicleClass}</span>
+                        <span className="font-medium text-gray-900">{vehicleData.vehicle_class}</span>
                       </div>
                       <div>
                         <span className="block text-xs text-gray-500">Fuel Used</span>
-                        <span className="font-medium text-gray-900">{vehicleData.fuelUsed}</span>
+                        <span className="font-medium text-gray-900">{vehicleData.fuel_used}</span>
                       </div>
                     </div>
                   </div>
@@ -194,30 +235,30 @@ const Services: React.FC = () => {
                     <div className="space-y-4">
                       <div>
                         <span className="block text-xs text-gray-500">Maker's Name</span>
-                        <span className="font-medium text-gray-900">{vehicleData.makersName}</span>
+                        <span className="font-medium text-gray-900">{vehicleData.makers_name}</span>
                       </div>
                       <div>
                         <span className="block text-xs text-gray-500">Cubic Capacity</span>
-                        <span className="font-medium text-gray-900">{vehicleData.cubicCapacity}</span>
+                        <span className="font-medium text-gray-900">{vehicleData.cubic_capacity}</span>
                       </div>
                       <div>
                         <span className="block text-xs text-gray-500">Maker's Classification</span>
-                        <span className="font-medium text-gray-900">{vehicleData.makersClassification}</span>
+                        <span className="font-medium text-gray-900">{vehicleData.makers_classification}</span>
                       </div>
                       <div>
                         <span className="block text-xs text-gray-500">Seating Capacity</span>
-                        <span className="font-medium text-gray-900">{vehicleData.seatingCapacity}</span>
+                        <span className="font-medium text-gray-900">{vehicleData.seating_capacity}</span>
                       </div>
                       <div>
                         <span className="block text-xs text-gray-500">Month/Year of Manufacture</span>
-                        <span className="font-medium text-gray-900">{(vehicleData as any).monthYearOfManufacture || '-'}</span>
+                        <span className="font-medium text-gray-900">{vehicleData.month_year_of_manufacture || '-'}</span>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
             ) : (
-              hasSearched && (
+              hasSearched && !searchLoading && (
                 <p className="text-red-500">No vehicle found with that registration number.</p>
               )
             )}
@@ -238,7 +279,7 @@ const Services: React.FC = () => {
                   <Input
                     type="text"
                     readOnly
-                    value={services.find(s => s.id === selectedService)?.name || 'N/A'}
+                    value={services?.find((s: any) => s.id === selectedService)?.name || 'N/A'}
                   />
                 </div>
                 <div>
@@ -278,7 +319,13 @@ const Services: React.FC = () => {
               </div>
               <div className="flex flex-col sm:flex-row justify-between gap-3">
                 <Button variant="outline" onClick={() => setStep(2)} className="w-full sm:w-auto">Back</Button>
-                <Button onClick={handleSubmit} className="w-full sm:w-auto">Submit</Button>
+                <Button 
+                  onClick={handleSubmit} 
+                  className="w-full sm:w-auto"
+                  isLoading={orderLoading}
+                >
+                  Submit
+                </Button>
               </div>
             </div>
           </div>

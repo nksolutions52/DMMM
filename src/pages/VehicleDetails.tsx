@@ -4,14 +4,42 @@ import MainLayout from '../components/layout/MainLayout';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import { ArrowLeft, Edit, Trash2 } from 'lucide-react';
-import { mockVehicles } from '../data/mockData';
+import { useApi, useApiMutation } from '../hooks/useApi';
+import { vehiclesAPI } from '../services/api';
 
 const VehicleDetails: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const vehicle = mockVehicles.find(v => v.id === id);
+  
+  const { data: vehicle, loading, error } = useApi(
+    () => vehiclesAPI.getById(id!),
+    [id]
+  );
 
-  if (!vehicle) {
+  const { mutate: deleteVehicle } = useApiMutation();
+
+  const handleDelete = async () => {
+    if (window.confirm('Are you sure you want to delete this vehicle?')) {
+      try {
+        await deleteVehicle(() => vehiclesAPI.delete(id!));
+        navigate('/vehicles');
+      } catch (error) {
+        console.error('Delete failed:', error);
+      }
+    }
+  };
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (error || !vehicle) {
     return (
       <MainLayout>
         <div className="text-center py-12">
@@ -31,11 +59,11 @@ const VehicleDetails: React.FC = () => {
     {
       title: 'Basic Information',
       fields: [
-        { label: 'Registration Number', value: vehicle.registrationNumber },
-        { label: 'Owner Name', value: vehicle.registeredOwnerName },
-        { label: 'Mobile Number', value: vehicle.mobileNumber },
-        { label: 'Aadhar Number', value: vehicle.aadharNumber },
-        { label: 'Guardian Info', value: vehicle.guardianInfo },
+        { label: 'Registration Number', value: vehicle.registration_number },
+        { label: 'Owner Name', value: vehicle.registered_owner_name },
+        { label: 'Mobile Number', value: vehicle.mobile_number },
+        { label: 'Aadhar Number', value: vehicle.aadhar_number },
+        { label: 'Guardian Info', value: vehicle.guardian_info },
         { label: 'Address', value: vehicle.address },
         { label: 'Type', value: vehicle.type },
       ]
@@ -43,43 +71,43 @@ const VehicleDetails: React.FC = () => {
     {
       title: 'Vehicle Details',
       fields: [
-        { label: 'Maker\'s Name', value: vehicle.makersName },
-        { label: 'Model', value: vehicle.makersClassification },
-        { label: 'Body Type', value: vehicle.bodyType },
+        { label: 'Maker\'s Name', value: vehicle.makers_name },
+        { label: 'Model', value: vehicle.makers_classification },
+        { label: 'Body Type', value: vehicle.body_type },
         { label: 'Color', value: vehicle.colour },
-        { label: 'Fuel Type', value: vehicle.fuelUsed },
-        { label: 'Seating Capacity', value: vehicle.seatingCapacity },
-        { label: 'Engine Number', value: vehicle.engineNumber },
-        { label: 'Chassis Number', value: vehicle.chassisNumber },
+        { label: 'Fuel Type', value: vehicle.fuel_used },
+        { label: 'Seating Capacity', value: vehicle.seating_capacity },
+        { label: 'Engine Number', value: vehicle.engine_number },
+        { label: 'Chassis Number', value: vehicle.chassis_number },
       ]
     },
     {
       title: 'Registration Details',
       fields: [
-        { label: 'Date of Registration', value: vehicle.dateOfRegistration },
-        { label: 'Valid Upto', value: vehicle.registrationValidUpto },
-        { label: 'Tax Valid Upto', value: vehicle.taxUpto },
-        { label: 'Insurance Valid Upto', value: vehicle.insuranceUpto },
-        { label: 'FC Valid Upto', value: vehicle.fcValidUpto },
-        { label: 'Permit Valid Upto', value: vehicle.permitUpto },
+        { label: 'Date of Registration', value: vehicle.date_of_registration },
+        { label: 'Valid Upto', value: vehicle.registration_valid_upto },
+        { label: 'Tax Valid Upto', value: vehicle.tax_upto },
+        { label: 'Insurance Valid Upto', value: vehicle.insurance_upto },
+        { label: 'FC Valid Upto', value: vehicle.fc_valid_upto },
+        { label: 'Permit Valid Upto', value: vehicle.permit_upto },
       ]
     },
     {
       title: 'Documents & Other Details',
       fields: [
-        { label: 'PUC Number', value: vehicle.pucNumber },
-        { label: 'PUC Valid From', value: vehicle.pucFrom },
-        { label: 'PUC Valid To', value: vehicle.pucTo },
-        { label: 'Insurance Policy Number', value: vehicle.policyNumber },
-        { label: 'Insurance Valid From', value: vehicle.insuranceFrom },
-        { label: 'Insurance Valid To', value: vehicle.insuranceTo },
+        { label: 'PUC Number', value: vehicle.puc_number },
+        { label: 'PUC Valid From', value: vehicle.puc_from },
+        { label: 'PUC Valid To', value: vehicle.puc_to },
+        { label: 'Insurance Policy Number', value: vehicle.policy_number },
+        { label: 'Insurance Valid From', value: vehicle.insurance_from },
+        { label: 'Insurance Valid To', value: vehicle.insurance_to },
       ]
     }
   ];
 
   return (
     <MainLayout>
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4 mt-3">
         <div className="flex items-center">
           <button 
             onClick={() => navigate('/vehicles')}
@@ -88,7 +116,7 @@ const VehicleDetails: React.FC = () => {
             <ArrowLeft size={20} className="text-gray-600" />
           </button>
           <div className="text-sm text-gray-600">
-            {vehicle.registrationNumber}
+            {vehicle.registration_number}
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
@@ -103,6 +131,7 @@ const VehicleDetails: React.FC = () => {
           <Button
             variant="danger"
             leftIcon={<Trash2 size={18} />}
+            onClick={handleDelete}
             className="w-full sm:w-auto"
           >
             Delete

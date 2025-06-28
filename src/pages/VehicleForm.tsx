@@ -5,7 +5,8 @@ import MainLayout from "../components/layout/MainLayout";
 import Input from "../components/ui/Input";
 import Button from "../components/ui/Button";
 import { Accordion, AccordionItem } from "../components/ui/Accordion";
-import { mockVehicles, vehicleTypes } from "../data/mockData";
+import { useApi, useApiMutation } from "../hooks/useApi";
+import { vehiclesAPI } from "../services/api";
 
 const initialState = {
   aadharNumber: "",
@@ -73,18 +74,90 @@ const initialState = {
   taxAddress: "",
 };
 
+const vehicleTypes = [
+  { value: 'Transport', label: 'Transport' },
+  { value: 'Non Transport', label: 'Non Transport' }
+];
+
 const VehicleForm: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const [activeTab, setActiveTab] = useState("personal");
   const [form, setForm] = useState(initialState);
 
+  const { data: vehicle, loading } = useApi(
+    () => id ? vehiclesAPI.getById(id) : Promise.resolve(null),
+    [id]
+  );
+
+  const { mutate: saveVehicle, loading: saving } = useApiMutation();
+
   useEffect(() => {
-    if (id) {
-      const vehicle = mockVehicles.find((v) => v.id === id);
-      if (vehicle) setForm({ ...initialState, ...vehicle });
+    if (vehicle) {
+      setForm({
+        aadharNumber: vehicle.aadhar_number || "",
+        mobileNumber: vehicle.mobile_number || "",
+        registeredOwnerName: vehicle.registered_owner_name || "",
+        registrationNumber: vehicle.registration_number || "",
+        guardianInfo: vehicle.guardian_info || "",
+        dateOfRegistration: vehicle.date_of_registration || "",
+        address: vehicle.address || "",
+        registrationValidUpto: vehicle.registration_valid_upto || "",
+        taxUpto: vehicle.tax_upto || "",
+        insuranceUpto: vehicle.insurance_upto || "",
+        fcValidUpto: vehicle.fc_valid_upto || "",
+        hypothecatedTo: vehicle.hypothecated_to || "",
+        permitUpto: vehicle.permit_upto || "",
+        chassisNumber: vehicle.chassis_number || "",
+        bodyType: vehicle.body_type || "",
+        engineNumber: vehicle.engine_number || "",
+        colour: vehicle.colour || "",
+        vehicleClass: vehicle.vehicle_class || "",
+        fuelUsed: vehicle.fuel_used || "",
+        makersName: vehicle.makers_name || "",
+        cubicCapacity: vehicle.cubic_capacity || "",
+        makersClassification: vehicle.makers_classification || "",
+        seatingCapacity: vehicle.seating_capacity || "",
+        monthYearOfManufacture: vehicle.month_year_of_manufacture || "",
+        ulw: vehicle.ulw || "",
+        gvw: vehicle.gvw || "",
+        subject: vehicle.subject || "",
+        registeringAuthority: vehicle.registering_authority || "",
+        pucNumber: vehicle.puc_number || "",
+        pucDate: vehicle.puc_date || "",
+        pucTenure: vehicle.puc_tenure || "",
+        pucFrom: vehicle.puc_from || "",
+        pucTo: vehicle.puc_to || "",
+        pucContactNo: vehicle.puc_contact_no || "",
+        pucAddress: vehicle.puc_address || "",
+        insuranceCompanyName: vehicle.insurance_company_name || "",
+        insuranceType: vehicle.insurance_type || "",
+        policyNumber: vehicle.policy_number || "",
+        insuranceDate: vehicle.insurance_date || "",
+        insuranceTenure: vehicle.insurance_tenure || "",
+        insuranceFrom: vehicle.insurance_from || "",
+        insuranceTo: vehicle.insurance_to || "",
+        insuranceContactNo: vehicle.insurance_contact_no || "",
+        insuranceAddress: vehicle.insurance_address || "",
+        type: vehicle.type || "Non Transport",
+        fcNumber: vehicle.fc_number || "",
+        fcTenureFrom: vehicle.fc_tenure_from || "",
+        fcTenureTo: vehicle.fc_tenure_to || "",
+        fcContactNo: vehicle.fc_contact_no || "",
+        fcAddress: vehicle.fc_address || "",
+        permitNumber: vehicle.permit_number || "",
+        permitTenureFrom: vehicle.permit_tenure_from || "",
+        permitTenureTo: vehicle.permit_tenure_to || "",
+        permitContactNo: vehicle.permit_contact_no || "",
+        permitAddress: vehicle.permit_address || "",
+        taxNumber: vehicle.tax_number || "",
+        taxTenureFrom: vehicle.tax_tenure_from || "",
+        taxTenureTo: vehicle.tax_tenure_to || "",
+        taxContactNo: vehicle.tax_contact_no || "",
+        taxAddress: vehicle.tax_address || "",
+      });
     }
-  }, [id]);
+  }, [vehicle]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -92,15 +165,30 @@ const VehicleForm: React.FC = () => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    alert(
-      id
-        ? "Vehicle updated successfully!"
-        : "Vehicle registration submitted successfully!"
-    );
-    navigate("/vehicles");
+    
+    try {
+      if (id) {
+        await saveVehicle(() => vehiclesAPI.update(id, form));
+      } else {
+        await saveVehicle(() => vehiclesAPI.create(form));
+      }
+      navigate("/vehicles");
+    } catch (error) {
+      console.error('Save failed:', error);
+    }
   };
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
@@ -164,6 +252,7 @@ const VehicleForm: React.FC = () => {
                   fullWidth
                   value={form.aadharNumber}
                   onChange={handleChange}
+                  required
                 />
                 <Input
                   label="MOBILE NUMBER"
@@ -173,6 +262,7 @@ const VehicleForm: React.FC = () => {
                   fullWidth
                   value={form.mobileNumber}
                   onChange={handleChange}
+                  required
                 />
                 <Input
                   label="REGISTERED OWNER NAME"
@@ -182,6 +272,7 @@ const VehicleForm: React.FC = () => {
                   fullWidth
                   value={form.registeredOwnerName}
                   onChange={handleChange}
+                  required
                 />
                 <Input
                   label="REGISTRATION NUMBER"
@@ -191,6 +282,7 @@ const VehicleForm: React.FC = () => {
                   fullWidth
                   value={form.registrationNumber}
                   onChange={handleChange}
+                  required
                 />
                 <Input
                   label="D/o or S/o or W/o"
@@ -208,6 +300,7 @@ const VehicleForm: React.FC = () => {
                   fullWidth
                   value={form.dateOfRegistration}
                   onChange={handleChange}
+                  required
                 />
                 <div className="lg:col-span-2">
                   <Input
@@ -218,6 +311,7 @@ const VehicleForm: React.FC = () => {
                     fullWidth
                     value={form.address}
                     onChange={handleChange}
+                    required
                   />
                 </div>
                 <Input
@@ -307,6 +401,7 @@ const VehicleForm: React.FC = () => {
                   fullWidth
                   value={form.chassisNumber}
                   onChange={handleChange}
+                  required
                 />
                 <Input
                   label="BODY TYPE"
@@ -325,6 +420,7 @@ const VehicleForm: React.FC = () => {
                   fullWidth
                   value={form.engineNumber}
                   onChange={handleChange}
+                  required
                 />
                 <Input
                   label="COLOUR"
@@ -744,7 +840,11 @@ const VehicleForm: React.FC = () => {
               </Accordion>
 
               <div className="flex justify-end mt-6">
-                <Button type="submit" className="w-full sm:w-auto">
+                <Button 
+                  type="submit" 
+                  className="w-full sm:w-auto"
+                  isLoading={saving}
+                >
                   {id ? "Update Vehicle" : "Register Vehicle"}
                 </Button>
               </div>

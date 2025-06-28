@@ -4,122 +4,55 @@ import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import { Search, AlertCircle, Calendar, X } from 'lucide-react';
-
-interface RenewalDue {
-  id: string;
-  vehicleNumber: string;
-  ownerName: string;
-  renewalType: 'Insurance' | 'Tax' | 'FC' | 'Permit';
-  dueDate: string;
-  status: 'upcoming' | 'overdue';
-  daysLeft: number;
-  vehicleDetails?: {
-    makersName: string;
-    model: string;
-    registrationDate: string;
-    chassisNumber: string;
-    engineNumber: string;
-    fuelType: string;
-  };
-}
-
-const mockRenewalDues: RenewalDue[] = [
-  {
-    id: '1',
-    vehicleNumber: 'MH02AB2021',
-    ownerName: 'Priya Patel',
-    renewalType: 'Insurance',
-    dueDate: '2024-03-25',
-    status: 'upcoming',
-    daysLeft: 3,
-    vehicleDetails: {
-      makersName: 'Hyundai',
-      model: 'Creta',
-      registrationDate: '2021-11-10',
-      chassisNumber: 'MBLHA10ATCGJ67890',
-      engineNumber: 'HA10ENCGJ67890',
-      fuelType: 'Diesel'
-    }
-  },
-  {
-    id: '2',
-    vehicleNumber: 'KA01MJ2022',
-    ownerName: 'Rahul Sharma',
-    renewalType: 'Tax',
-    dueDate: '2024-03-15',
-    status: 'overdue',
-    daysLeft: -7,
-    vehicleDetails: {
-      makersName: 'Maruti Suzuki',
-      model: 'Swift',
-      registrationDate: '2022-05-15',
-      chassisNumber: 'MBLHA10ATCGJ12345',
-      engineNumber: 'HA10ENCGJ12345',
-      fuelType: 'Petrol'
-    }
-  },
-  {
-    id: '3',
-    vehicleNumber: 'DL01RT2023',
-    ownerName: 'Arun Kumar',
-    renewalType: 'FC',
-    dueDate: '2024-04-05',
-    status: 'upcoming',
-    daysLeft: 15,
-    vehicleDetails: {
-      makersName: 'Tata Motors',
-      model: 'Harrier',
-      registrationDate: '2023-01-20',
-      chassisNumber: 'MBLHA10ATCGJ24680',
-      engineNumber: 'HA10ENCGJ24680',
-      fuelType: 'Petrol'
-    }
-  }
-];
+import { useApi, useApiMutation } from '../hooks/useApi';
+import { renewalsAPI } from '../services/api';
 
 const RenewalDues: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedType, setSelectedType] = useState<string>('all');
-  const [selectedRenewal, setSelectedRenewal] = useState<RenewalDue | null>(null);
+  const [selectedType, setSelectedType] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedRenewal, setSelectedRenewal] = useState<any>(null);
   const [renewalAmount, setRenewalAmount] = useState('');
   const [showProcessDialog, setShowProcessDialog] = useState(false);
 
-  const filteredDues = mockRenewalDues.filter(due => {
-    const matchesSearch = 
-      due.vehicleNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      due.ownerName.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesType = selectedType === 'all' || due.renewalType.toLowerCase() === selectedType.toLowerCase();
-    
-    return matchesSearch && matchesType;
-  });
+  const { data: renewalsData, loading, error, refetch } = useApi(
+    () => renewalsAPI.getAll({ 
+      page: currentPage, 
+      limit: 10, 
+      search: searchTerm,
+      type: selectedType 
+    }),
+    [currentPage, searchTerm, selectedType]
+  );
 
-  const handleProcessRenewal = (renewal: RenewalDue) => {
+  const { mutate: processRenewal, loading: processing } = useApiMutation();
+
+  const renewals = renewalsData?.renewals || [];
+  const pagination = renewalsData?.pagination;
+
+  const handleProcessRenewal = (renewal: any) => {
     setSelectedRenewal(renewal);
     setShowProcessDialog(true);
   };
 
-  const handleSubmitRenewal = () => {
+  const handleSubmitRenewal = async () => {
     if (!selectedRenewal || !renewalAmount) return;
 
-    const serviceOrder = {
-      id: Math.random().toString(36).substr(2, 9),
-      vehicleNumber: selectedRenewal.vehicleNumber,
-      serviceType: `${selectedRenewal.renewalType} Renewal`,
-      amount: parseFloat(renewalAmount),
-      status: 'pending',
-      customerName: selectedRenewal.ownerName,
-      createdAt: new Date().toISOString()
-    };
-
-    alert('Service order created successfully!');
-    setShowProcessDialog(false);
-    setRenewalAmount('');
-    setSelectedRenewal(null);
+    try {
+      await processRenewal(() => renewalsAPI.processRenewal(selectedRenewal.id, parseFloat(renewalAmount)));
+      alert('Service order created successfully!');
+      setShowProcessDialog(false);
+      setRenewalAmount('');
+      setSelectedRenewal(null);
+      refetch();
+    } catch (error) {
+      console.error('Process renewal failed:', error);
+      alert('Failed to process renewal. Please try again.');
+    }
   };
 
   const getStatusStyle = (status: string, daysLeft: number) => {
-    if (status === 'overdue') {
+    if (status === 'overdue' || daysLeft < 0) {
       return {
         bg: 'bg-red-50',
         border: 'border-red-100',
@@ -143,6 +76,32 @@ const RenewalDues: React.FC = () => {
     };
   };
 
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+    setCurrentPage(1);
+  };
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <MainLayout>
+        <div className="text-center py-12">
+          <p className="text-red-600 mb-4">Error loading renewal dues: {error}</p>
+          <Button onClick={refetch}>Retry</Button>
+        </div>
+      </MainLayout>
+    );
+  }
+
   return (
     <MainLayout>
       <Card className='mt-3'>
@@ -151,46 +110,53 @@ const RenewalDues: React.FC = () => {
             <Input
               placeholder="Search by vehicle number or owner name..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={handleSearch}
               leftIcon={<Search size={18} />}
               fullWidth
             />
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
-              variant={selectedType === 'all' ? 'primary' : 'outline'}
-              onClick={() => setSelectedType('all')}
+              variant={selectedType === '' ? 'primary' : 'outline'}
+              onClick={() => setSelectedType('')}
               size="sm"
             >
               All
             </Button>
             <Button
-              variant={selectedType === 'insurance' ? 'primary' : 'outline'}
-              onClick={() => setSelectedType('insurance')}
+              variant={selectedType === 'Insurance' ? 'primary' : 'outline'}
+              onClick={() => setSelectedType('Insurance')}
               size="sm"
             >
               Insurance
             </Button>
             <Button
-              variant={selectedType === 'tax' ? 'primary' : 'outline'}
-              onClick={() => setSelectedType('tax')}
+              variant={selectedType === 'Tax' ? 'primary' : 'outline'}
+              onClick={() => setSelectedType('Tax')}
               size="sm"
             >
               Tax
             </Button>
             <Button
-              variant={selectedType === 'fc' ? 'primary' : 'outline'}
-              onClick={() => setSelectedType('fc')}
+              variant={selectedType === 'FC' ? 'primary' : 'outline'}
+              onClick={() => setSelectedType('FC')}
               size="sm"
             >
               FC
+            </Button>
+            <Button
+              variant={selectedType === 'Permit' ? 'primary' : 'outline'}
+              onClick={() => setSelectedType('Permit')}
+              size="sm"
+            >
+              Permit
             </Button>
           </div>
         </div>
 
         <div className="space-y-4">
-          {filteredDues.map((due) => {
-            const style = getStatusStyle(due.status, due.daysLeft);
+          {renewals.map((due: any) => {
+            const style = getStatusStyle(due.status, due.days_left);
             
             return (
               <div
@@ -200,7 +166,7 @@ const RenewalDues: React.FC = () => {
                 <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
                   <div className="flex items-start space-x-4 flex-1 min-w-0">
                     <div className={`p-2 rounded-lg ${style.bg} flex-shrink-0`}>
-                      {due.status === 'overdue' ? (
+                      {due.status === 'overdue' || due.days_left < 0 ? (
                         <AlertCircle className={`h-5 w-5 sm:h-6 sm:w-6 ${style.text}`} />
                       ) : (
                         <Calendar className={`h-5 w-5 sm:h-6 sm:w-6 ${style.text}`} />
@@ -209,30 +175,30 @@ const RenewalDues: React.FC = () => {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-2 mb-2">
                         <h3 className={`font-medium ${style.text}`}>
-                          {due.renewalType} Renewal
+                          {due.renewal_type} Renewal
                         </h3>
                         <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${style.badge} ${style.text} self-start sm:self-auto mt-1 sm:mt-0`}>
-                          {due.status === 'overdue' 
-                            ? `${Math.abs(due.daysLeft)} days overdue`
-                            : `${due.daysLeft} days left`}
+                          {due.days_left < 0 
+                            ? `${Math.abs(due.days_left)} days overdue`
+                            : `${due.days_left} days left`}
                         </span>
                       </div>
                       <div className="space-y-1">
                         <p className="text-sm text-gray-600">
-                          Vehicle: <span className="font-medium break-words">{due.vehicleNumber}</span>
+                          Vehicle: <span className="font-medium break-words">{due.registration_number}</span>
                         </p>
                         <p className="text-sm text-gray-600">
-                          Owner: <span className="font-medium break-words">{due.ownerName}</span>
+                          Owner: <span className="font-medium break-words">{due.registered_owner_name}</span>
                         </p>
                         <p className="text-sm text-gray-500">
-                          Due Date: {new Date(due.dueDate).toLocaleDateString()}
+                          Due Date: {new Date(due.due_date).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
                   </div>
                   <Button
                     size="sm"
-                    variant={due.status === 'overdue' ? 'danger' : 'primary'}
+                    variant={due.days_left < 0 ? 'danger' : 'primary'}
                     onClick={() => handleProcessRenewal(due)}
                     className="w-full sm:w-auto flex-shrink-0"
                   >
@@ -243,12 +209,42 @@ const RenewalDues: React.FC = () => {
             );
           })}
 
-          {filteredDues.length === 0 && (
+          {renewals.length === 0 && (
             <div className="text-center py-8 text-gray-500">
               No renewal dues found matching your criteria.
             </div>
           )}
         </div>
+
+        {/* Pagination */}
+        {pagination && pagination.totalPages > 1 && (
+          <div className="mt-6 flex items-center justify-between">
+            <div className="text-sm text-gray-700">
+              Showing {((currentPage - 1) * 10) + 1} to {Math.min(currentPage * 10, pagination.totalCount)} of {pagination.totalCount} results
+            </div>
+            <div className="flex space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(currentPage - 1)}
+                disabled={!pagination.hasPrev}
+              >
+                Previous
+              </Button>
+              <span className="px-3 py-1 text-sm text-gray-700">
+                Page {currentPage} of {pagination.totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(currentPage + 1)}
+                disabled={!pagination.hasNext}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Process Renewal Dialog */}
@@ -272,31 +268,31 @@ const RenewalDues: React.FC = () => {
                   <div className="space-y-3">
                     <div>
                       <span className="text-gray-600 text-sm block">Registration Number:</span>
-                      <span className="font-medium break-words">{selectedRenewal.vehicleNumber}</span>
+                      <span className="font-medium break-words">{selectedRenewal.registration_number}</span>
                     </div>
                     <div>
                       <span className="text-gray-600 text-sm block">Make & Model:</span>
                       <span className="font-medium">
-                        {selectedRenewal.vehicleDetails?.makersName} {selectedRenewal.vehicleDetails?.model}
+                        {selectedRenewal.makers_name} {selectedRenewal.makers_classification}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-600 text-sm block">Registration Date:</span>
                       <span className="font-medium">
-                        {new Date(selectedRenewal.vehicleDetails?.registrationDate || '').toLocaleDateString()}
+                        {new Date(selectedRenewal.date_of_registration).toLocaleDateString()}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-600 text-sm block">Chassis Number:</span>
-                      <span className="font-medium break-all">{selectedRenewal.vehicleDetails?.chassisNumber}</span>
+                      <span className="font-medium break-all">{selectedRenewal.chassis_number}</span>
                     </div>
                     <div>
                       <span className="text-gray-600 text-sm block">Engine Number:</span>
-                      <span className="font-medium break-all">{selectedRenewal.vehicleDetails?.engineNumber}</span>
+                      <span className="font-medium break-all">{selectedRenewal.engine_number}</span>
                     </div>
                     <div>
                       <span className="text-gray-600 text-sm block">Fuel Type:</span>
-                      <span className="font-medium">{selectedRenewal.vehicleDetails?.fuelType}</span>
+                      <span className="font-medium">{selectedRenewal.fuel_used}</span>
                     </div>
                   </div>
                 </div>
@@ -306,24 +302,24 @@ const RenewalDues: React.FC = () => {
                   <div className="space-y-3">
                     <div>
                       <span className="text-gray-600 text-sm block">Owner Name:</span>
-                      <span className="font-medium break-words">{selectedRenewal.ownerName}</span>
+                      <span className="font-medium break-words">{selectedRenewal.registered_owner_name}</span>
                     </div>
                     <div>
                       <span className="text-gray-600 text-sm block">Renewal Type:</span>
-                      <span className="font-medium">{selectedRenewal.renewalType}</span>
+                      <span className="font-medium">{selectedRenewal.renewal_type}</span>
                     </div>
                     <div>
                       <span className="text-gray-600 text-sm block">Due Date:</span>
                       <span className="font-medium">
-                        {new Date(selectedRenewal.dueDate).toLocaleDateString()}
+                        {new Date(selectedRenewal.due_date).toLocaleDateString()}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-600 text-sm block">Status:</span>
                       <span className={`font-medium ${
-                        selectedRenewal.status === 'overdue' ? 'text-red-600' : 'text-yellow-600'
+                        selectedRenewal.days_left < 0 ? 'text-red-600' : 'text-yellow-600'
                       }`}>
-                        {selectedRenewal.status.charAt(0).toUpperCase() + selectedRenewal.status.slice(1)}
+                        {selectedRenewal.days_left < 0 ? 'Overdue' : 'Upcoming'}
                       </span>
                     </div>
                   </div>
@@ -352,6 +348,7 @@ const RenewalDues: React.FC = () => {
                 <Button
                   onClick={handleSubmitRenewal}
                   disabled={!renewalAmount}
+                  isLoading={processing}
                   className="w-full sm:w-auto"
                 >
                   Create Service Order

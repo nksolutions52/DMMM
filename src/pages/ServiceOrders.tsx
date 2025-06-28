@@ -1,55 +1,40 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import MainLayout from '../components/layout/MainLayout';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
+import Button from '../components/ui/Button';
 import { Search, FileText, MoreVertical } from 'lucide-react';
-import { ServiceOrder } from '../types';
+import { useApi, useApiMutation } from '../hooks/useApi';
+import { servicesAPI } from '../services/api';
 import Popover from '../components/ui/Popover';
-
-const mockServiceOrders: ServiceOrder[] = [
-  {
-    id: '1',
-    vehicleNumber: 'KA01MJ2022',
-    serviceType: 'Transfer of Ownership',
-    amount: 1500,
-    amountPaid: 1000,
-    status: 'pending',
-    createdAt: '2024-03-20T10:00:00',
-    customerName: 'Rahul Sharma'
-  },
-  {
-    id: '2',
-    vehicleNumber: 'MH02AB2021',
-    serviceType: 'Fitness',
-    amount: 600,
-    amountPaid: 300,
-    status: 'completed',
-    createdAt: '2024-03-19T15:30:00',
-    customerName: 'Priya Patel'
-  }
-];
 
 const ServiceOrders: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filteredOrders, setFilteredOrders] = useState(mockServiceOrders);
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState<ServiceOrder | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [payAmount, setPayAmount] = useState<number>(0);
   const [popoverOpenId, setPopoverOpenId] = useState<string | null>(null);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
 
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const term = e.target.value.toLowerCase();
-    setSearchTerm(term);
-    const filtered = mockServiceOrders.filter(order =>
-      order.vehicleNumber.toLowerCase().includes(term) ||
-      order.customerName.toLowerCase().includes(term) ||
-      order.serviceType.toLowerCase().includes(term)
-    );
-    setFilteredOrders(filtered);
-  };
+  const { data: ordersData, loading, error, refetch } = useApi(
+    () => servicesAPI.getOrders({ 
+      page: currentPage, 
+      limit: 10, 
+      search: searchTerm,
+      status: selectedStatus 
+    }),
+    [currentPage, searchTerm, selectedStatus]
+  );
 
-  const getStatusColor = (status: ServiceOrder['status']) => {
+  const { mutate: updateOrderStatus } = useApiMutation();
+  const { mutate: makePayment } = useApiMutation();
+
+  const orders = ordersData?.orders || [];
+  const pagination = ordersData?.pagination;
+
+  const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
         return 'bg-green-100 text-green-800';
@@ -60,57 +45,110 @@ const ServiceOrders: React.FC = () => {
     }
   };
 
-  const handlePay = () => {
-    if (selectedOrder && payAmount > 0) {
-      selectedOrder.amountPaid = Number(selectedOrder.amountPaid ?? 0) + payAmount;
-      setShowPaymentModal(false);
-      setSelectedOrder(null);
-      setPayAmount(0);
+  const handleComplete = async (order: any) => {
+    try {
+      await updateOrderStatus(() => servicesAPI.updateOrderStatus(order.id, 'completed'));
+      refetch();
+    } catch (error) {
+      console.error('Update failed:', error);
     }
+    setPopoverOpenId(null);
   };
 
-  const handleComplete = (order: ServiceOrder) => {
+  const handleCancel = async (order: any) => {
+    if (window.confirm('Are you sure you want to cancel this order?')) {
+      try {
+        await updateOrderStatus(() => servicesAPI.updateOrderStatus(order.id, 'cancelled'));
+        refetch();
+      } catch (error) {
+        console.error('Update failed:', error);
+      }
+    }
     setPopoverOpenId(null);
   };
-  const handleCancel = (order: ServiceOrder) => {
-    setPopoverOpenId(null);
-  };
-  const handlePayOrder = (order: ServiceOrder) => {
+
+  const handlePayOrder = (order: any) => {
     setSelectedOrder(order);
     setShowPaymentModal(true);
     setPopoverOpenId(null);
     setAnchorRect(null);
   };
-  const handleView = (order: ServiceOrder) => {
+
+  const handleView = (order: any) => {
+    // Navigate to order details or show details modal
     setPopoverOpenId(null);
   };
 
-  useEffect(() => {
-    if (!popoverOpenId) return;
-    function handleClick(event: MouseEvent) {
-      setPopoverOpenId(null);
-      setAnchorRect(null);
+  const handlePay = async () => {
+    if (selectedOrder && payAmount > 0) {
+      try {
+        await makePayment(() => servicesAPI.makePayment(selectedOrder.id, payAmount));
+        setShowPaymentModal(false);
+        setSelectedOrder(null);
+        setPayAmount(0);
+        refetch();
+      } catch (error) {
+        console.error('Payment failed:', error);
+      }
     }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [popoverOpenId]);
+  };
+
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+    setCurrentPage(1);
+  };
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <MainLayout>
+        <div className="text-center py-12">
+          <p className="text-red-600 mb-4">Error loading service orders: {error}</p>
+          <Button onClick={refetch}>Retry</Button>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
       <Card className='mt-3'>
-        <div className="mb-6">
-          <Input
-            placeholder="Search by vehicle number, customer name, or service type..."
-            value={searchTerm}
-            onChange={handleSearch}
-            leftIcon={<Search size={18} />}
-            fullWidth
-          />
+        <div className="flex flex-col lg:flex-row gap-4 mb-6">
+          <div className="flex-1">
+            <Input
+              placeholder="Search by vehicle number, customer name, or service type..."
+              value={searchTerm}
+              onChange={handleSearch}
+              leftIcon={<Search size={18} />}
+              fullWidth
+            />
+          </div>
+          <div className="flex gap-2">
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
         </div>
 
         {/* Mobile Card View */}
         <div className="block lg:hidden space-y-4">
-          {filteredOrders.map((order) => (
+          {orders.map((order: any) => (
             <div key={order.id} className="bg-gray-50 rounded-lg p-4 border">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center">
@@ -119,7 +157,7 @@ const ServiceOrders: React.FC = () => {
                   </div>
                   <div>
                     <div className="text-sm font-medium text-gray-900">#{order.id}</div>
-                    <div className="text-xs text-gray-500">{new Date(order.createdAt).toLocaleDateString()}</div>
+                    <div className="text-xs text-gray-500">{new Date(order.created_at).toLocaleDateString()}</div>
                   </div>
                 </div>
                 <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
@@ -130,15 +168,15 @@ const ServiceOrders: React.FC = () => {
               <div className="space-y-2 mb-3">
                 <div>
                   <span className="text-xs text-gray-500">Customer:</span>
-                  <span className="text-sm font-medium text-gray-900 ml-1">{order.customerName}</span>
+                  <span className="text-sm font-medium text-gray-900 ml-1">{order.customer_name}</span>
                 </div>
                 <div>
                   <span className="text-xs text-gray-500">Vehicle:</span>
-                  <span className="text-sm text-gray-700 ml-1">{order.vehicleNumber}</span>
+                  <span className="text-sm text-gray-700 ml-1">{order.registration_number}</span>
                 </div>
                 <div>
                   <span className="text-xs text-gray-500">Service:</span>
-                  <span className="text-sm text-gray-700 ml-1">{order.serviceType}</span>
+                  <span className="text-sm text-gray-700 ml-1">{order.service_type}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-sm">
                   <div>
@@ -147,11 +185,11 @@ const ServiceOrders: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-xs text-gray-500 block">Paid</span>
-                    <span className="font-medium">₹{order.amountPaid ?? 0}</span>
+                    <span className="font-medium">₹{order.amount_paid ?? 0}</span>
                   </div>
                   <div>
                     <span className="text-xs text-gray-500 block">Pending</span>
-                    <span className="font-medium">₹{Number(order.amount) - Number(order.amountPaid ?? 0)}</span>
+                    <span className="font-medium">₹{Number(order.amount) - Number(order.amount_paid ?? 0)}</span>
                   </div>
                 </div>
               </div>
@@ -226,7 +264,7 @@ const ServiceOrders: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredOrders.map((order) => (
+              {orders.map((order: any) => (
                 <tr key={order.id}>
                   <td className="px-6 py-4">
                     <div className="flex items-center">
@@ -235,25 +273,25 @@ const ServiceOrders: React.FC = () => {
                       </div>
                       <div className="ml-4">
                         <div className="text-sm font-medium text-gray-900">#{order.id}</div>
-                        <div className="text-sm text-gray-500">{new Date(order.createdAt).toLocaleDateString()}</div>
+                        <div className="text-sm text-gray-500">{new Date(order.created_at).toLocaleDateString()}</div>
                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-sm font-medium text-gray-900">{order.customerName}</div>
-                    <div className="text-sm text-gray-500">{order.vehicleNumber}</div>
+                    <div className="text-sm font-medium text-gray-900">{order.customer_name}</div>
+                    <div className="text-sm text-gray-500">{order.registration_number}</div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900">{order.serviceType}</div>
+                    <div className="text-sm text-gray-900">{order.service_type}</div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm text-gray-900">₹{order.amount}</div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900">₹{order.amountPaid ?? 0}</div>
+                    <div className="text-sm text-gray-900">₹{order.amount_paid ?? 0}</div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900">₹{Number(order.amount) - Number(order.amountPaid ?? 0)}</div>
+                    <div className="text-sm text-gray-900">₹{Number(order.amount) - Number(order.amount_paid ?? 0)}</div>
                   </td>
                   <td className="px-6 py-4">
                     <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
@@ -299,6 +337,36 @@ const ServiceOrders: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {pagination && pagination.totalPages > 1 && (
+          <div className="mt-6 flex items-center justify-between">
+            <div className="text-sm text-gray-700">
+              Showing {((currentPage - 1) * 10) + 1} to {Math.min(currentPage * 10, pagination.totalCount)} of {pagination.totalCount} results
+            </div>
+            <div className="flex space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(currentPage - 1)}
+                disabled={!pagination.hasPrev}
+              >
+                Previous
+              </Button>
+              <span className="px-3 py-1 text-sm text-gray-700">
+                Page {currentPage} of {pagination.totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(currentPage + 1)}
+                disabled={!pagination.hasNext}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {showPaymentModal && selectedOrder && (
@@ -318,14 +386,14 @@ const ServiceOrders: React.FC = () => {
               </div>
               <div>
                 <label className="block text-gray-600 text-sm mb-1">Amount Paid</label>
-                <input className="w-full bg-gray-100 rounded px-3 py-2" readOnly value={selectedOrder.amountPaid ?? 0} />
+                <input className="w-full bg-gray-100 rounded px-3 py-2" readOnly value={selectedOrder.amount_paid ?? 0} />
               </div>
               <div>
                 <label className="block text-gray-600 text-sm mb-1">Pending Amount</label>
                 <input
                   className="w-full bg-gray-100 rounded px-3 py-2"
                   readOnly
-                  value={Number(selectedOrder.amount) - Number(selectedOrder.amountPaid ?? 0)}
+                  value={Number(selectedOrder.amount) - Number(selectedOrder.amount_paid ?? 0)}
                 />
               </div>
               <div>
@@ -334,7 +402,7 @@ const ServiceOrders: React.FC = () => {
                   className="w-full border rounded px-3 py-2"
                   type="number"
                   min={1}
-                  max={Number(selectedOrder.amount) - Number(selectedOrder.amountPaid ?? 0)}
+                  max={Number(selectedOrder.amount) - Number(selectedOrder.amount_paid ?? 0)}
                   value={payAmount}
                   onChange={e => setPayAmount(Number(e.target.value))}
                 />
@@ -345,7 +413,7 @@ const ServiceOrders: React.FC = () => {
                   onClick={handlePay}
                   disabled={
                     payAmount < 1 ||
-                    payAmount > (Number(selectedOrder.amount) - Number(selectedOrder.amountPaid ?? 0))
+                    payAmount > (Number(selectedOrder.amount) - Number(selectedOrder.amount_paid ?? 0))
                   }
                 >
                   Pay
