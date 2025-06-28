@@ -7,26 +7,32 @@ const seedData = async () => {
   try {
     await client.query('BEGIN');
 
-    // Create default users
+    // 🔹 Create default users — INSERT one at a time with ON CONFLICT
     const hashedPassword = await bcrypt.hash('password123', 10);
-    
-    await client.query(`
-      INSERT INTO users (name, email, password, role) VALUES
-      ('Admin User', 'admin@rta.gov', $1, 'admin'),
-      ('Agent User', 'agent@rta.gov', $1, 'agent')
-      ON CONFLICT (email) DO NOTHING
-    `, [hashedPassword]);
 
-    // Get user IDs for foreign key references
+    await client.query(
+      `INSERT INTO users (name, email, password, role)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (email) DO NOTHING`,
+      ['Admin User', 'admin@rta.gov', hashedPassword, 'admin']
+    );
+
+    await client.query(
+      `INSERT INTO users (name, email, password, role)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (email) DO NOTHING`,
+      ['Agent User', 'agent@rta.gov', hashedPassword, 'agent']
+    );
+
+    // 🔹 Get user IDs
     const adminUser = await client.query('SELECT id FROM users WHERE email = $1', ['admin@rta.gov']);
     const agentUser = await client.query('SELECT id FROM users WHERE email = $1', ['agent@rta.gov']);
 
     const adminId = adminUser.rows[0]?.id;
     const agentId = agentUser.rows[0]?.id;
 
-    // Insert sample vehicles
+    // 🔹 Insert sample vehicles
     const vehicleInserts = [
-      // Non Transport Vehicle 1
       {
         aadhar_number: '1234 5678 9012',
         mobile_number: '9876543210',
@@ -56,7 +62,6 @@ const seedData = async () => {
         type: 'Non Transport',
         created_by: adminId
       },
-      // Non Transport Vehicle 2
       {
         aadhar_number: '2345 6789 0123',
         mobile_number: '9123456780',
@@ -86,7 +91,6 @@ const seedData = async () => {
         type: 'Non Transport',
         created_by: agentId
       },
-      // Transport Vehicle 1
       {
         aadhar_number: '3456 7890 1234',
         mobile_number: '9988776655',
@@ -134,8 +138,9 @@ const seedData = async () => {
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
           $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
-        ) RETURNING id
+        )
         ON CONFLICT (registration_number) DO NOTHING
+        RETURNING id
       `;
 
       const vehicleValues = [
@@ -153,23 +158,23 @@ const seedData = async () => {
       ];
 
       const vehicleResult = await client.query(vehicleQuery, vehicleValues);
-      
+
       if (vehicleResult.rows.length > 0) {
         const vehicleId = vehicleResult.rows[0].id;
 
-        // Insert sample PUC details
+        // PUC details
         await client.query(`
           INSERT INTO puc_details (vehicle_id, puc_number, puc_date, puc_tenure, puc_from, puc_to, puc_contact_no, puc_address)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         `, [vehicleId, `PUC${Math.random().toString().substr(2, 5)}`, '2023-05-15', '1', '2023-05-15', '2024-05-14', vehicle.mobile_number, vehicle.address]);
 
-        // Insert sample Insurance details
+        // Insurance details
         await client.query(`
           INSERT INTO insurance_details (vehicle_id, company_name, policy_number, insurance_type, insurance_date, insurance_tenure, insurance_from, insurance_to, insurance_contact_no, insurance_address)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         `, [vehicleId, 'ICICI Lombard', `POL${Math.random().toString().substr(2, 6)}`, 'Comprehensive', '2023-05-15', '1', '2023-05-15', '2024-05-14', vehicle.mobile_number, vehicle.address]);
 
-        // Insert renewal dues
+        // Renewal dues
         const renewalTypes = ['Insurance', 'Tax'];
         if (vehicle.type === 'Transport') {
           renewalTypes.push('FC', 'Permit');
@@ -177,8 +182,7 @@ const seedData = async () => {
 
         for (const renewalType of renewalTypes) {
           const dueDate = new Date();
-          dueDate.setDate(dueDate.getDate() + Math.floor(Math.random() * 60) - 30); // Random date within ±30 days
-
+          dueDate.setDate(dueDate.getDate() + Math.floor(Math.random() * 60) - 30);
           await client.query(`
             INSERT INTO renewal_dues (vehicle_id, renewal_type, due_date, amount, status)
             VALUES ($1, $2, $3, $4, $5)
@@ -187,9 +191,8 @@ const seedData = async () => {
       }
     }
 
-    // Insert sample service orders
+    // Service orders
     const vehicles = await client.query('SELECT id, registration_number, registered_owner_name FROM vehicles LIMIT 3');
-    
     for (const vehicle of vehicles.rows) {
       await client.query(`
         INSERT INTO service_orders (vehicle_id, service_type, amount, amount_paid, customer_name, status, agent_id)
@@ -205,11 +208,10 @@ const seedData = async () => {
       ]);
     }
 
-    // Insert sample appointments
+    // Appointments
     for (let i = 0; i < 5; i++) {
       const appointmentDate = new Date();
       appointmentDate.setDate(appointmentDate.getDate() + Math.floor(Math.random() * 30));
-      
       await client.query(`
         INSERT INTO appointments (vehicle_number, appointment_date, time_slot, description, status, agent_id)
         VALUES ($1, $2, $3, $4, $5, $6)
@@ -234,7 +236,7 @@ const seedData = async () => {
   }
 };
 
-// Run seeding
+// Run
 seedData()
   .then(() => {
     console.log('Seeding completed successfully');
