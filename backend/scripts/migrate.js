@@ -134,12 +134,13 @@ const createTables = async () => {
       )
     `);
 
-    // Create service orders table
+    // Create service orders table with actual_amount column
     await client.query(`
       CREATE TABLE IF NOT EXISTS service_orders (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         vehicle_id UUID REFERENCES vehicles(id) ON DELETE CASCADE,
         service_type VARCHAR(255) NOT NULL,
+        actual_amount DECIMAL(10,2) NOT NULL,
         amount DECIMAL(10,2) NOT NULL,
         amount_paid DECIMAL(10,2) DEFAULT 0,
         discount DECIMAL(10,2) DEFAULT 0,
@@ -178,6 +179,23 @@ const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+
+    // Add actual_amount column to existing service_orders table if it doesn't exist
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'service_orders' AND column_name = 'actual_amount'
+        ) THEN
+          ALTER TABLE service_orders ADD COLUMN actual_amount DECIMAL(10,2);
+          -- Set actual_amount to current amount + discount for existing records
+          UPDATE service_orders SET actual_amount = amount + discount WHERE actual_amount IS NULL;
+          -- Make actual_amount NOT NULL after setting values
+          ALTER TABLE service_orders ALTER COLUMN actual_amount SET NOT NULL;
+        END IF;
+      END $$;
     `);
 
     // Create indexes for better performance
