@@ -72,7 +72,7 @@ export const vehiclesAPI = {
   getAll: async (params: { page?: number; limit?: number; search?: string; type?: string } = {}) => {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') {
+      if (value !== undefined && value !== null && value !== '') {
         queryParams.append(key, value.toString());
       }
     });
@@ -119,7 +119,7 @@ export const servicesAPI = {
   getOrders: async (params: { page?: number; limit?: number; search?: string; status?: string } = {}) => {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') {
+      if (value !== undefined && value !== null && value !== '') {
         queryParams.append(key, value.toString());
       }
     });
@@ -159,7 +159,7 @@ export const appointmentsAPI = {
   getAll: async (params: { page?: number; limit?: number; search?: string; status?: string } = {}) => {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') {
+      if (value !== undefined && value !== null && value !== '') {
         queryParams.append(key, value.toString());
       }
     });
@@ -209,7 +209,7 @@ export const renewalsAPI = {
   getAll: async (params: { page?: number; limit?: number; search?: string; type?: string; status?: string } = {}) => {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') {
+      if (value !== undefined && value !== null && value !== '') {
         queryParams.append(key, value.toString());
       }
     });
@@ -273,7 +273,7 @@ export const reportsAPI = {
   getVehicleRegistration: async (params: any = {}) => {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') {
+      if (value !== undefined && value !== null && value !== '') {
         queryParams.append(key, value.toString());
       }
     });
@@ -285,7 +285,7 @@ export const reportsAPI = {
   getServicesSummary: async (params: any = {}) => {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') {
+      if (value !== undefined && value !== null && value !== '') {
         queryParams.append(key, value.toString());
       }
     });
@@ -297,7 +297,7 @@ export const reportsAPI = {
   getDailyRevenue: async (params: any = {}) => {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') {
+      if (value !== undefined && value !== null && value !== '') {
         queryParams.append(key, value.toString());
       }
     });
@@ -309,7 +309,7 @@ export const reportsAPI = {
   getRenewalDues: async (params: any = {}) => {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') {
+      if (value !== undefined && value !== null && value !== '') {
         queryParams.append(key, value.toString());
       }
     });
@@ -329,7 +329,7 @@ export const reportsAPI = {
   getAppointmentsSummary: async (params: any = {}) => {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== '') {
+      if (value !== undefined && value !== null && value !== '') {
         queryParams.append(key, value.toString());
       }
     });
