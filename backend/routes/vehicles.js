@@ -2,6 +2,9 @@ const express = require('express');
 const pool = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
 const { validateRequest, schemas } = require('../middleware/validation');
+const { uploadDocuments } = require('../middleware/upload');
+const path = require('path');
+const fs = require('fs');
 
 const router = express.Router();
 
@@ -84,7 +87,7 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// Get vehicle by ID
+// Get vehicle by ID with documents
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -116,9 +119,33 @@ router.get('/:id', authenticateToken, async (req, res) => {
       });
     }
 
+    // Get vehicle documents
+    const documentsQuery = `
+      SELECT id, document_type, file_name, original_name, file_size, mime_type, created_at
+      FROM vehicle_documents
+      WHERE vehicle_id = $1
+      ORDER BY document_type, created_at DESC
+    `;
+
+    const documentsResult = await pool.query(documentsQuery, [id]);
+
+    // Group documents by type
+    const documents = {};
+    documentsResult.rows.forEach(doc => {
+      if (!documents[doc.document_type]) {
+        documents[doc.document_type] = [];
+      }
+      documents[doc.document_type].push(doc);
+    });
+
+    const vehicleData = {
+      ...result.rows[0],
+      documents
+    };
+
     res.json({
       success: true,
-      data: result.rows[0]
+      data: vehicleData
     });
   } catch (error) {
     console.error('Get vehicle error:', error);
@@ -174,8 +201,35 @@ router.get('/search/:registrationNumber', authenticateToken, async (req, res) =>
   }
 });
 
-// Create new vehicle
-router.post('/', authenticateToken, validateRequest(schemas.vehicle), async (req, res) => {
+// Helper function to save document files
+const saveDocumentFiles = async (client, vehicleId, files, userId) => {
+  if (!files) return;
+
+  for (const [fieldName, fileArray] of Object.entries(files)) {
+    const documentType = fieldName.split('_')[0]; // Extract type from fieldname
+    
+    for (const file of fileArray) {
+      await client.query(`
+        INSERT INTO vehicle_documents (
+          vehicle_id, document_type, file_name, file_path, file_size, 
+          mime_type, original_name, uploaded_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [
+        vehicleId,
+        documentType,
+        file.filename,
+        file.path,
+        file.size,
+        file.mimetype,
+        file.originalname,
+        userId
+      ]);
+    }
+  }
+};
+
+// Create new vehicle with documents
+router.post('/', authenticateToken, uploadDocuments, async (req, res) => {
   const client = await pool.connect();
   
   try {
@@ -220,6 +274,9 @@ router.post('/', authenticateToken, validateRequest(schemas.vehicle), async (req
 
     const vehicleResult = await client.query(vehicleQuery, vehicleValues);
     const vehicleId = vehicleResult.rows[0].id;
+
+    // Save uploaded documents
+    await saveDocumentFiles(client, vehicleId, req.files, req.user.id);
 
     // Insert PUC details if provided
     if (vehicleData.pucNumber) {
@@ -278,6 +335,15 @@ router.post('/', authenticateToken, validateRequest(schemas.vehicle), async (req
     await client.query('ROLLBACK');
     console.error('Create vehicle error:', error);
     
+    // Clean up uploaded files on error
+    if (req.files) {
+      Object.values(req.files).flat().forEach(file => {
+        if (fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+        }
+      });
+    }
+    
     // Check for unique constraint violation
     if (error.code === '23505' && error.constraint === 'vehicles_registration_number_key') {
       return res.status(400).json({
@@ -295,8 +361,8 @@ router.post('/', authenticateToken, validateRequest(schemas.vehicle), async (req
   }
 });
 
-// Update vehicle by ID
-router.put('/:id', authenticateToken, validateRequest(schemas.vehicle), async (req, res) => {
+// Update vehicle by ID with documents
+router.put('/:id', authenticateToken, uploadDocuments, async (req, res) => {
   const client = await pool.connect();
   
   try {
@@ -349,6 +415,9 @@ router.put('/:id', authenticateToken, validateRequest(schemas.vehicle), async (r
     ];
 
     await client.query(vehicleQuery, vehicleValues);
+
+    // Save new uploaded documents (don't delete existing ones, just add new)
+    await saveDocumentFiles(client, id, req.files, req.user.id);
 
     // Delete existing related records first
     await client.query('DELETE FROM puc_details WHERE vehicle_id = $1', [id]);
@@ -413,6 +482,15 @@ router.put('/:id', authenticateToken, validateRequest(schemas.vehicle), async (r
     await client.query('ROLLBACK');
     console.error('Update vehicle error:', error);
     
+    // Clean up uploaded files on error
+    if (req.files) {
+      Object.values(req.files).flat().forEach(file => {
+        if (fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+        }
+      });
+    }
+    
     // Check for unique constraint violation
     if (error.code === '23505' && error.constraint === 'vehicles_registration_number_key') {
       return res.status(400).json({
@@ -432,28 +510,143 @@ router.put('/:id', authenticateToken, validateRequest(schemas.vehicle), async (r
 
 // Delete vehicle by ID
 router.delete('/:id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  
   try {
+    await client.query('BEGIN');
+    
     const { id } = req.params;
 
-    const result = await pool.query('DELETE FROM vehicles WHERE id = $1 RETURNING id', [id]);
+    // Get all documents for this vehicle to delete files
+    const documentsResult = await client.query(
+      'SELECT file_path FROM vehicle_documents WHERE vehicle_id = $1',
+      [id]
+    );
+
+    // Delete the vehicle (cascade will handle related records)
+    const result = await client.query('DELETE FROM vehicles WHERE id = $1 RETURNING id', [id]);
 
     if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({
         success: false,
         message: 'Vehicle not found'
       });
     }
 
+    // Delete physical files
+    documentsResult.rows.forEach(doc => {
+      if (fs.existsSync(doc.file_path)) {
+        fs.unlinkSync(doc.file_path);
+      }
+    });
+
+    await client.query('COMMIT');
+
     res.json({
       success: true,
       message: 'Vehicle deleted successfully'
     });
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Delete vehicle error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
     });
+  } finally {
+    client.release();
+  }
+});
+
+// Download document file
+router.get('/documents/:id/download', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      'SELECT file_path, original_name, mime_type FROM vehicle_documents WHERE id = $1',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Document not found'
+      });
+    }
+
+    const document = result.rows[0];
+
+    if (!fs.existsSync(document.file_path)) {
+      return res.status(404).json({
+        success: false,
+        message: 'File not found on server'
+      });
+    }
+
+    res.setHeader('Content-Disposition', `attachment; filename="${document.original_name}"`);
+    res.setHeader('Content-Type', document.mime_type);
+    
+    const fileStream = fs.createReadStream(document.file_path);
+    fileStream.pipe(res);
+  } catch (error) {
+    console.error('Download document error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Delete specific document
+router.delete('/documents/:id', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    const { id } = req.params;
+
+    // Get document info before deleting
+    const documentResult = await client.query(
+      'SELECT file_path FROM vehicle_documents WHERE id = $1',
+      [id]
+    );
+
+    if (documentResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: 'Document not found'
+      });
+    }
+
+    const document = documentResult.rows[0];
+
+    // Delete from database
+    await client.query('DELETE FROM vehicle_documents WHERE id = $1', [id]);
+
+    // Delete physical file
+    if (fs.existsSync(document.file_path)) {
+      fs.unlinkSync(document.file_path);
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Document deleted successfully'
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Delete document error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  } finally {
+    client.release();
   }
 });
 

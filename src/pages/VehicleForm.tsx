@@ -6,6 +6,7 @@ import Input from "../components/ui/Input";
 import Button from "../components/ui/Button";
 import LoadingSpinner from "../components/ui/LoadingSpinner";
 import ErrorMessage from "../components/ui/ErrorMessage";
+import FileUpload from "../components/ui/FileUpload";
 import { Accordion, AccordionItem } from "../components/ui/Accordion";
 import { useApi, useApiMutation } from "../hooks/useApi";
 import { vehiclesAPI } from "../services/api";
@@ -102,6 +103,13 @@ const VehicleForm: React.FC = () => {
   const { id } = useParams<{ id?: string }>();
   const [activeTab, setActiveTab] = useState("personal");
   const [form, setForm] = useState(initialState);
+  const [documentFiles, setDocumentFiles] = useState<{[key: string]: FileList | null}>({
+    puc_documents: null,
+    insurance_documents: null,
+    fitness_documents: null,
+    permit_documents: null,
+    tax_documents: null
+  });
 
   // Only fetch vehicle data if we have an ID (editing mode)
   const { data: vehicle, loading, error } = useApi(
@@ -111,6 +119,7 @@ const VehicleForm: React.FC = () => {
   ) as { data: Vehicle | null, loading: boolean, error: any };
 
   const { mutate: saveVehicle, loading: saving } = useApiMutation();
+  const { mutate: deleteDocument } = useApiMutation();
 
   useEffect(() => {
     if (vehicle && id) {
@@ -185,85 +194,78 @@ const VehicleForm: React.FC = () => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
+  const handleFileChange = (documentType: string, files: FileList | null) => {
+    setDocumentFiles(prev => ({
+      ...prev,
+      [documentType]: files
+    }));
+  };
+
+  const handleDeleteExistingDocument = async (fileId: string) => {
+    if (window.confirm('Are you sure you want to delete this document?')) {
+      try {
+        await deleteDocument(() => 
+          fetch(`/api/vehicles/documents/${fileId}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            }
+          })
+        );
+        // Refresh vehicle data to update the documents list
+        window.location.reload();
+      } catch (error) {
+        console.error('Delete document failed:', error);
+        alert('Failed to delete document. Please try again.');
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     try {
-      // Convert frontend form field names to backend field names
-      const vehicleData = {
-        aadharNumber: form.aadharNumber,
-        mobileNumber: form.mobileNumber,
-        registeredOwnerName: form.registeredOwnerName,
-        registrationNumber: form.registrationNumber,
-        guardianInfo: form.guardianInfo,
-        dateOfRegistration: form.dateOfRegistration,
-        address: form.address,
-        registrationValidUpto: form.registrationValidUpto,
-        taxUpto: form.taxUpto,
-        insuranceUpto: form.insuranceUpto,
-        fcValidUpto: form.fcValidUpto,
-        hypothecatedTo: form.hypothecatedTo,
-        permitUpto: form.permitUpto,
-        chassisNumber: form.chassisNumber,
-        bodyType: form.bodyType,
-        engineNumber: form.engineNumber,
-        colour: form.colour,
-        vehicleClass: form.vehicleClass,
-        fuelUsed: form.fuelUsed,
-        makersName: form.makersName,
-        cubicCapacity: form.cubicCapacity,
-        makersClassification: form.makersClassification,
-        seatingCapacity: form.seatingCapacity,
-        monthYearOfManufacture: form.monthYearOfManufacture,
-        ulw: form.ulw,
-        gvw: form.gvw,
-        subject: form.subject,
-        registeringAuthority: form.registeringAuthority,
-        type: form.type,
-        // PUC Details
-        pucNumber: form.pucNumber,
-        pucDate: form.pucDate,
-        pucTenure: form.pucTenure,
-        pucFrom: form.pucFrom,
-        pucTo: form.pucTo,
-        pucContactNo: form.pucContactNo,
-        pucAddress: form.pucAddress,
-        // Insurance Details
-        insuranceCompanyName: form.insuranceCompanyName,
-        insuranceType: form.insuranceType,
-        policyNumber: form.policyNumber,
-        insuranceDate: form.insuranceDate,
-        insuranceTenure: form.insuranceTenure,
-        insuranceFrom: form.insuranceFrom,
-        insuranceTo: form.insuranceTo,
-        insuranceContactNo: form.insuranceContactNo,
-        insuranceAddress: form.insuranceAddress,
-        // Transport specific details
-        fcNumber: form.fcNumber,
-        fcTenureFrom: form.fcTenureFrom,
-        fcTenureTo: form.fcTenureTo,
-        fcContactNo: form.fcContactNo,
-        fcAddress: form.fcAddress,
-        permitNumber: form.permitNumber,
-        permitTenureFrom: form.permitTenureFrom,
-        permitTenureTo: form.permitTenureTo,
-        permitContactNo: form.permitContactNo,
-        permitAddress: form.permitAddress,
-        taxNumber: form.taxNumber,
-        taxTenureFrom: form.taxTenureFrom,
-        taxTenureTo: form.taxTenureTo,
-        taxContactNo: form.taxContactNo,
-        taxAddress: form.taxAddress,
-      };
+      // Create FormData for file upload
+      const formData = new FormData();
+      
+      // Add all form fields
+      Object.entries(form).forEach(([key, value]) => {
+        formData.append(key, value || '');
+      });
 
+      // Add vehicle ID for updates
       if (id) {
-        await saveVehicle(() => vehiclesAPI.update(id, vehicleData));
-        alert('Vehicle updated successfully!');
-      } else {
-        await saveVehicle(() => vehiclesAPI.create(vehicleData));
-        alert('Vehicle registered successfully!');
+        formData.append('vehicleId', id);
       }
-      navigate("/vehicles");
+
+      // Add document files
+      Object.entries(documentFiles).forEach(([documentType, files]) => {
+        if (files) {
+          Array.from(files).forEach(file => {
+            formData.append(documentType, file);
+          });
+        }
+      });
+
+      const url = id ? `/api/vehicles/${id}` : '/api/vehicles';
+      const method = id ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+        },
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        alert(id ? 'Vehicle updated successfully!' : 'Vehicle registered successfully!');
+        navigate("/vehicles");
+      } else {
+        throw new Error(result.message || 'Failed to save vehicle');
+      }
     } catch (error) {
       console.error('Save failed:', error);
       alert('Failed to save vehicle. Please try again.');
@@ -638,7 +640,7 @@ const VehicleForm: React.FC = () => {
                 {/* PUC */}
                 {(form.type === "Non Transport" || form.type === "Transport") && (
                   <AccordionItem key="puc" title="PUC Particulars">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
                       <Input
                         label="PUC NUMBER"
                         name="pucNumber"
@@ -693,12 +695,20 @@ const VehicleForm: React.FC = () => {
                         />
                       </div>
                     </div>
+                    <FileUpload
+                      label="PUC Documents"
+                      name="puc_documents"
+                      existingFiles={vehicle?.documents?.puc || []}
+                      onFilesChange={(files) => handleFileChange('puc_documents', files)}
+                      onDeleteExisting={handleDeleteExistingDocument}
+                    />
                   </AccordionItem>
                 )}
+                
                 {/* Insurance */}
                 {(form.type === "Non Transport" || form.type === "Transport") && (
                   <AccordionItem key="insurance" title="Insurance Details">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
                       <Input
                         label="INSURANCE COMPANY NAME"
                         name="insuranceCompanyName"
@@ -771,12 +781,20 @@ const VehicleForm: React.FC = () => {
                         />
                       </div>
                     </div>
+                    <FileUpload
+                      label="Insurance Documents"
+                      name="insurance_documents"
+                      existingFiles={vehicle?.documents?.insurance || []}
+                      onFilesChange={(files) => handleFileChange('insurance_documents', files)}
+                      onDeleteExisting={handleDeleteExistingDocument}
+                    />
                   </AccordionItem>
                 )}
+                
                 {/* Fitness */}
                 {form.type === "Transport" && (
                   <AccordionItem key="fitness" title="Fitness Certificate">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
                       <Input
                         label="F C NUMBER"
                         name="fcNumber"
@@ -825,12 +843,20 @@ const VehicleForm: React.FC = () => {
                         />
                       </div>
                     </div>
+                    <FileUpload
+                      label="Fitness Documents"
+                      name="fitness_documents"
+                      existingFiles={vehicle?.documents?.fitness || []}
+                      onFilesChange={(files) => handleFileChange('fitness_documents', files)}
+                      onDeleteExisting={handleDeleteExistingDocument}
+                    />
                   </AccordionItem>
                 )}
+                
                 {/* Permit */}
                 {form.type === "Transport" && (
                   <AccordionItem key="permit" title="Permit Details">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
                       <Input
                         label="PERMIT NUMBER"
                         name="permitNumber"
@@ -879,12 +905,20 @@ const VehicleForm: React.FC = () => {
                         />
                       </div>
                     </div>
+                    <FileUpload
+                      label="Permit Documents"
+                      name="permit_documents"
+                      existingFiles={vehicle?.documents?.permit || []}
+                      onFilesChange={(files) => handleFileChange('permit_documents', files)}
+                      onDeleteExisting={handleDeleteExistingDocument}
+                    />
                   </AccordionItem>
                 )}
+                
                 {/* Tax */}
                 {form.type === "Transport" && (
                   <AccordionItem key="tax" title="Tax Details">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
                       <Input
                         label="TAX NUMBER"
                         name="taxNumber"
@@ -933,6 +967,13 @@ const VehicleForm: React.FC = () => {
                         />
                       </div>
                     </div>
+                    <FileUpload
+                      label="Tax Documents"
+                      name="tax_documents"
+                      existingFiles={vehicle?.documents?.tax || []}
+                      onFilesChange={(files) => handleFileChange('tax_documents', files)}
+                      onDeleteExisting={handleDeleteExistingDocument}
+                    />
                   </AccordionItem>
                 )}
               </Accordion>

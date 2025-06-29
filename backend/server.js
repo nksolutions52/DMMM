@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
@@ -38,6 +39,9 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Serve uploaded files statically
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/vehicles', vehicleRoutes);
@@ -55,6 +59,29 @@ app.get('/api/health', (req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
+  
+  // Handle multer errors
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({
+      success: false,
+      message: 'File too large. Maximum size is 10MB per file.'
+    });
+  }
+  
+  if (err.code === 'LIMIT_FILE_COUNT') {
+    return res.status(400).json({
+      success: false,
+      message: 'Too many files. Maximum 5 files per document type.'
+    });
+  }
+  
+  if (err.message && err.message.includes('Only images')) {
+    return res.status(400).json({
+      success: false,
+      message: err.message
+    });
+  }
+  
   res.status(500).json({
     success: false,
     message: 'Something went wrong!',
