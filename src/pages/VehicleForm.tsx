@@ -87,15 +87,18 @@ const VehicleForm: React.FC = () => {
   const [activeTab, setActiveTab] = useState("personal");
   const [form, setForm] = useState(initialState);
 
+  // Only fetch vehicle data if we have an ID (editing mode)
   const { data: vehicle, loading, error } = useApi(
     () => id ? vehiclesAPI.getById(id) : Promise.resolve(null),
-    [id]
+    [id],
+    !id // Skip API call if no ID
   );
 
   const { mutate: saveVehicle, loading: saving } = useApiMutation();
 
   useEffect(() => {
-    if (vehicle) {
+    if (vehicle && id) {
+      // Map backend field names to frontend form field names
       setForm({
         aadharNumber: vehicle.aadhar_number || "",
         mobileNumber: vehicle.mobile_number || "",
@@ -159,7 +162,7 @@ const VehicleForm: React.FC = () => {
         taxAddress: vehicle.tax_address || "",
       });
     }
-  }, [vehicle]);
+  }, [vehicle, id]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -171,18 +174,89 @@ const VehicleForm: React.FC = () => {
     e.preventDefault();
     
     try {
+      // Convert frontend form field names to backend field names
+      const vehicleData = {
+        aadharNumber: form.aadharNumber,
+        mobileNumber: form.mobileNumber,
+        registeredOwnerName: form.registeredOwnerName,
+        registrationNumber: form.registrationNumber,
+        guardianInfo: form.guardianInfo,
+        dateOfRegistration: form.dateOfRegistration,
+        address: form.address,
+        registrationValidUpto: form.registrationValidUpto,
+        taxUpto: form.taxUpto,
+        insuranceUpto: form.insuranceUpto,
+        fcValidUpto: form.fcValidUpto,
+        hypothecatedTo: form.hypothecatedTo,
+        permitUpto: form.permitUpto,
+        chassisNumber: form.chassisNumber,
+        bodyType: form.bodyType,
+        engineNumber: form.engineNumber,
+        colour: form.colour,
+        vehicleClass: form.vehicleClass,
+        fuelUsed: form.fuelUsed,
+        makersName: form.makersName,
+        cubicCapacity: form.cubicCapacity,
+        makersClassification: form.makersClassification,
+        seatingCapacity: form.seatingCapacity,
+        monthYearOfManufacture: form.monthYearOfManufacture,
+        ulw: form.ulw,
+        gvw: form.gvw,
+        subject: form.subject,
+        registeringAuthority: form.registeringAuthority,
+        type: form.type,
+        // PUC Details
+        pucNumber: form.pucNumber,
+        pucDate: form.pucDate,
+        pucTenure: form.pucTenure,
+        pucFrom: form.pucFrom,
+        pucTo: form.pucTo,
+        pucContactNo: form.pucContactNo,
+        pucAddress: form.pucAddress,
+        // Insurance Details
+        insuranceCompanyName: form.insuranceCompanyName,
+        insuranceType: form.insuranceType,
+        policyNumber: form.policyNumber,
+        insuranceDate: form.insuranceDate,
+        insuranceTenure: form.insuranceTenure,
+        insuranceFrom: form.insuranceFrom,
+        insuranceTo: form.insuranceTo,
+        insuranceContactNo: form.insuranceContactNo,
+        insuranceAddress: form.insuranceAddress,
+        // Transport specific details
+        fcNumber: form.fcNumber,
+        fcTenureFrom: form.fcTenureFrom,
+        fcTenureTo: form.fcTenureTo,
+        fcContactNo: form.fcContactNo,
+        fcAddress: form.fcAddress,
+        permitNumber: form.permitNumber,
+        permitTenureFrom: form.permitTenureFrom,
+        permitTenureTo: form.permitTenureTo,
+        permitContactNo: form.permitContactNo,
+        permitAddress: form.permitAddress,
+        taxNumber: form.taxNumber,
+        taxTenureFrom: form.taxTenureFrom,
+        taxTenureTo: form.taxTenureTo,
+        taxContactNo: form.taxContactNo,
+        taxAddress: form.taxAddress,
+      };
+
       if (id) {
-        await saveVehicle(() => vehiclesAPI.update(id, form));
+        await saveVehicle(() => vehiclesAPI.update(id, vehicleData));
+        alert('Vehicle updated successfully!');
       } else {
-        await saveVehicle(() => vehiclesAPI.create(form));
+        await saveVehicle(() => vehiclesAPI.create(vehicleData));
+        alert('Vehicle registered successfully!');
       }
       navigate("/vehicles");
     } catch (error) {
       console.error('Save failed:', error);
+      alert('Failed to save vehicle. Please try again.');
     }
   };
 
-  if (loading) {
+  // Show loading only when editing and fetching data
+  if (loading && id) {
     return (
       <MainLayout>
         <LoadingSpinner size="lg" text="Loading vehicle data..." className="h-64" />
@@ -190,7 +264,8 @@ const VehicleForm: React.FC = () => {
     );
   }
 
-  if (error) {
+  // Show error only when editing and there's an error
+  if (error && id) {
     return (
       <MainLayout>
         <ErrorMessage message={`Error loading vehicle: ${error}`} />

@@ -8,15 +8,25 @@ interface ApiState<T> {
 
 export function useApi<T>(
   apiCall: () => Promise<any>,
-  dependencies: any[] = []
+  dependencies: any[] = [],
+  skip: boolean = false
 ): ApiState<T> & { refetch: () => Promise<void> } {
   const [state, setState] = useState<ApiState<T>>({
     data: null,
-    loading: true,
+    loading: !skip,
     error: null,
   });
 
   const fetchData = async () => {
+    if (skip) {
+      setState({
+        data: null,
+        loading: false,
+        error: null,
+      });
+      return;
+    }
+
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
       const response = await apiCall();
@@ -36,7 +46,7 @@ export function useApi<T>(
 
   useEffect(() => {
     fetchData();
-  }, dependencies);
+  }, [...dependencies, skip]);
 
   return {
     ...state,
