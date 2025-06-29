@@ -133,7 +133,12 @@ const FileUpload: React.FC<FileUploadProps> = ({
           'Authorization': `Bearer ${token}`
         }
       })
-      .then(response => response.blob())
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Download failed');
+        }
+        return response.blob();
+      })
       .then(blob => {
         const url = window.URL.createObjectURL(blob);
         link.href = url;

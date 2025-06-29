@@ -91,6 +91,7 @@ const VehicleDetails: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('basic');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
 
   const { data, loading, error, refetch } = useApi(
     () => vehiclesAPI.getById(id!),
@@ -142,7 +143,12 @@ const VehicleDetails: React.FC = () => {
           'Authorization': `Bearer ${token}`
         }
       })
-      .then(response => response.blob())
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Download failed');
+        }
+        return response.blob();
+      })
       .then(blob => {
         const url = window.URL.createObjectURL(blob);
         link.href = url;
@@ -179,17 +185,39 @@ const VehicleDetails: React.FC = () => {
     return mimeType && mimeType.startsWith('image/');
   };
 
-  const handleImagePreview = (docId: string, mimeType: string) => {
+  const handleImagePreview = async (docId: string, mimeType: string) => {
     if (isImageFile(mimeType)) {
+      setImageLoading(true);
       const token = localStorage.getItem('authToken');
       const url = `http://localhost:5000/api/vehicles/documents/${docId}/download`;
       
-      if (token) {
-        // For images, we can set the URL directly with auth header handling
-        setSelectedImage(`${url}?auth=${token}`);
-      } else {
-        setSelectedImage(url);
+      try {
+        const response = await fetch(url, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to load image');
+        }
+        
+        const blob = await response.blob();
+        const imageUrl = window.URL.createObjectURL(blob);
+        setSelectedImage(imageUrl);
+      } catch (error) {
+        console.error('Failed to load image:', error);
+        alert('Failed to load image preview');
+      } finally {
+        setImageLoading(false);
       }
+    }
+  };
+
+  const handleCloseImagePreview = () => {
+    if (selectedImage) {
+      window.URL.revokeObjectURL(selectedImage);
+      setSelectedImage(null);
     }
   };
 
@@ -330,6 +358,7 @@ const VehicleDetails: React.FC = () => {
                                           onClick={() => handleImagePreview(file.id, file.mime_type)}
                                           className="p-1 text-blue-600 hover:text-blue-800"
                                           title="Preview"
+                                          isLoading={imageLoading}
                                         >
                                           <Eye className="h-4 w-4" />
                                         </Button>
@@ -398,8 +427,8 @@ const VehicleDetails: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
           <div className="relative max-w-4xl max-h-full">
             <button
-              onClick={() => setSelectedImage(null)}
-              className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
+              onClick={handleCloseImagePreview}
+              className="absolute top-4 right-4 text-white hover:text-gray-300 z-10 bg-black bg-opacity-50 rounded-full p-2"
             >
               <X size={24} />
             </button>
@@ -409,7 +438,7 @@ const VehicleDetails: React.FC = () => {
               className="max-w-full max-h-full object-contain rounded-lg"
               onError={() => {
                 console.error('Failed to load image');
-                setSelectedImage(null);
+                handleCloseImagePreview();
                 alert('Failed to load image preview');
               }}
             />

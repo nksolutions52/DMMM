@@ -584,8 +584,11 @@ router.get('/documents/:id/download', authenticateToken, async (req, res) => {
       });
     }
 
+    // Set appropriate headers for file download
     res.setHeader('Content-Disposition', `attachment; filename="${document.original_name}"`);
     res.setHeader('Content-Type', document.mime_type);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
     
     const fileStream = fs.createReadStream(document.file_path);
     fileStream.pipe(res);
