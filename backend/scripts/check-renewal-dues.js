@@ -16,7 +16,9 @@ const checkRenewalDues = async () => {
     const currentDateStr = currentDate.toISOString().split('T')[0];
     const futureDateStr = futureDate.toISOString().split('T')[0];
     
-    console.log(`📅 Checking for renewals from ${currentDateStr} to ${futureDateStr}`);
+    console.log(`📅 Current date: ${currentDateStr}`);
+    console.log(`📅 Checking for renewals until: ${futureDateStr}`);
+    console.log(`📅 This means we're looking for documents expiring between now and ${futureDateStr}`);
     
     let totalAdded = 0;
     const results = {
@@ -31,6 +33,21 @@ const checkRenewalDues = async () => {
     // Check PUC renewals - documents expiring within 30 days or already expired
     console.log('📋 Checking PUC renewals...');
     try {
+      // First, let's see what PUC documents we have
+      const pucCheckQuery = `
+        SELECT v.registration_number, p.puc_to, p.vehicle_id,
+               CASE WHEN p.puc_to <= $1 THEN 'SHOULD_ADD' ELSE 'NOT_DUE' END as should_add
+        FROM puc_details p
+        JOIN vehicles v ON p.vehicle_id = v.id
+        WHERE p.puc_to IS NOT NULL
+        ORDER BY p.puc_to ASC
+      `;
+      const pucCheck = await client.query(pucCheckQuery, [futureDateStr]);
+      console.log('📋 PUC Documents found:');
+      pucCheck.rows.forEach(row => {
+        console.log(`   ${row.registration_number}: ${row.puc_to} (${row.should_add})`);
+      });
+
       const pucQuery = `
         INSERT INTO renewal_dues (vehicle_id, renewal_type, due_date, amount, status, created_at)
         SELECT DISTINCT
@@ -55,6 +72,24 @@ const checkRenewalDues = async () => {
       const pucResult = await client.query(pucQuery, [futureDateStr]);
       results.puc = pucResult.rowCount || 0;
       console.log(`✅ Added ${results.puc} PUC renewal dues`);
+      
+      // Show which ones were added
+      if (results.puc > 0) {
+        const addedPucQuery = `
+          SELECT v.registration_number, rd.due_date
+          FROM renewal_dues rd
+          JOIN vehicles v ON rd.vehicle_id = v.id
+          WHERE rd.renewal_type = 'PUC'
+          AND rd.created_at >= CURRENT_TIMESTAMP - INTERVAL '1 minute'
+          ORDER BY rd.created_at DESC
+          LIMIT $1
+        `;
+        const addedPuc = await client.query(addedPucQuery, [results.puc]);
+        console.log('📋 PUC renewals added:');
+        addedPuc.rows.forEach(row => {
+          console.log(`   ${row.registration_number}: due ${row.due_date}`);
+        });
+      }
     } catch (error) {
       console.error('Error checking PUC renewals:', error);
       results.puc = 0;
@@ -63,6 +98,21 @@ const checkRenewalDues = async () => {
     // Check Insurance renewals - documents expiring within 30 days or already expired
     console.log('🛡️ Checking Insurance renewals...');
     try {
+      // First, let's see what Insurance documents we have
+      const insuranceCheckQuery = `
+        SELECT v.registration_number, i.insurance_to, i.vehicle_id,
+               CASE WHEN i.insurance_to <= $1 THEN 'SHOULD_ADD' ELSE 'NOT_DUE' END as should_add
+        FROM insurance_details i
+        JOIN vehicles v ON i.vehicle_id = v.id
+        WHERE i.insurance_to IS NOT NULL
+        ORDER BY i.insurance_to ASC
+      `;
+      const insuranceCheck = await client.query(insuranceCheckQuery, [futureDateStr]);
+      console.log('🛡️ Insurance Documents found:');
+      insuranceCheck.rows.forEach(row => {
+        console.log(`   ${row.registration_number}: ${row.insurance_to} (${row.should_add})`);
+      });
+
       const insuranceQuery = `
         INSERT INTO renewal_dues (vehicle_id, renewal_type, due_date, amount, status, created_at)
         SELECT DISTINCT
@@ -95,6 +145,20 @@ const checkRenewalDues = async () => {
     // Check Tax renewals (from vehicles table) - documents expiring within 30 days or already expired
     console.log('💰 Checking Tax renewals from vehicles table...');
     try {
+      // First, let's see what Tax documents we have
+      const taxCheckQuery = `
+        SELECT v.registration_number, v.tax_upto, v.id as vehicle_id,
+               CASE WHEN v.tax_upto <= $1 THEN 'SHOULD_ADD' ELSE 'NOT_DUE' END as should_add
+        FROM vehicles v
+        WHERE v.tax_upto IS NOT NULL
+        ORDER BY v.tax_upto ASC
+      `;
+      const taxCheck = await client.query(taxCheckQuery, [futureDateStr]);
+      console.log('💰 Tax Documents found (from vehicles table):');
+      taxCheck.rows.forEach(row => {
+        console.log(`   ${row.registration_number}: ${row.tax_upto} (${row.should_add})`);
+      });
+
       const taxQuery = `
         INSERT INTO renewal_dues (vehicle_id, renewal_type, due_date, amount, status, created_at)
         SELECT DISTINCT
@@ -126,6 +190,20 @@ const checkRenewalDues = async () => {
     // Check Fitness renewals (Transport vehicles only) - documents expiring within 30 days or already expired
     console.log('🔧 Checking Fitness renewals...');
     try {
+      const fitnessCheckQuery = `
+        SELECT v.registration_number, f.fc_tenure_to, f.vehicle_id,
+               CASE WHEN f.fc_tenure_to <= $1 THEN 'SHOULD_ADD' ELSE 'NOT_DUE' END as should_add
+        FROM fitness_details f
+        JOIN vehicles v ON f.vehicle_id = v.id
+        WHERE f.fc_tenure_to IS NOT NULL AND v.type = 'Transport'
+        ORDER BY f.fc_tenure_to ASC
+      `;
+      const fitnessCheck = await client.query(fitnessCheckQuery, [futureDateStr]);
+      console.log('🔧 Fitness Documents found:');
+      fitnessCheck.rows.forEach(row => {
+        console.log(`   ${row.registration_number}: ${row.fc_tenure_to} (${row.should_add})`);
+      });
+
       const fitnessQuery = `
         INSERT INTO renewal_dues (vehicle_id, renewal_type, due_date, amount, status, created_at)
         SELECT DISTINCT
@@ -159,6 +237,20 @@ const checkRenewalDues = async () => {
     // Check Permit renewals (Transport vehicles only) - documents expiring within 30 days or already expired
     console.log('📄 Checking Permit renewals...');
     try {
+      const permitCheckQuery = `
+        SELECT v.registration_number, p.permit_tenure_to, p.vehicle_id,
+               CASE WHEN p.permit_tenure_to <= $1 THEN 'SHOULD_ADD' ELSE 'NOT_DUE' END as should_add
+        FROM permit_details p
+        JOIN vehicles v ON p.vehicle_id = v.id
+        WHERE p.permit_tenure_to IS NOT NULL AND v.type = 'Transport'
+        ORDER BY p.permit_tenure_to ASC
+      `;
+      const permitCheck = await client.query(permitCheckQuery, [futureDateStr]);
+      console.log('📄 Permit Documents found:');
+      permitCheck.rows.forEach(row => {
+        console.log(`   ${row.registration_number}: ${row.permit_tenure_to} (${row.should_add})`);
+      });
+
       const permitQuery = `
         INSERT INTO renewal_dues (vehicle_id, renewal_type, due_date, amount, status, created_at)
         SELECT DISTINCT
@@ -192,6 +284,20 @@ const checkRenewalDues = async () => {
     // Check Tax renewals from tax_details table (Transport vehicles) - documents expiring within 30 days or already expired
     console.log('💳 Checking Tax details renewals...');
     try {
+      const taxDetailsCheckQuery = `
+        SELECT v.registration_number, t.tax_tenure_to, t.vehicle_id,
+               CASE WHEN t.tax_tenure_to <= $1 THEN 'SHOULD_ADD' ELSE 'NOT_DUE' END as should_add
+        FROM tax_details t
+        JOIN vehicles v ON t.vehicle_id = v.id
+        WHERE t.tax_tenure_to IS NOT NULL AND v.type = 'Transport'
+        ORDER BY t.tax_tenure_to ASC
+      `;
+      const taxDetailsCheck = await client.query(taxDetailsCheckQuery, [futureDateStr]);
+      console.log('💳 Tax Details Documents found:');
+      taxDetailsCheck.rows.forEach(row => {
+        console.log(`   ${row.registration_number}: ${row.tax_tenure_to} (${row.should_add})`);
+      });
+
       const taxDetailsQuery = `
         INSERT INTO renewal_dues (vehicle_id, renewal_type, due_date, amount, status, created_at)
         SELECT DISTINCT
@@ -247,6 +353,8 @@ const checkRenewalDues = async () => {
       overdueResult.rows.forEach(row => {
         console.log(`   ${row.renewal_type}: ${row.overdue_count} overdue`);
       });
+    } else {
+      console.log('✅ No overdue documents found');
     }
     
     return {
