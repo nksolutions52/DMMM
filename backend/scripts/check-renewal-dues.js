@@ -81,7 +81,7 @@ const checkRenewalDues = async () => {
             SELECT 1 FROM renewal_dues rd 
             WHERE rd.vehicle_id = p.vehicle_id 
               AND rd.renewal_type = 'PUC' 
-              AND rd.due_date = p.puc_to
+              AND DATE(rd.due_date) = DATE(p.puc_to)
               AND rd.status != 'completed'
           )
       `;
@@ -142,7 +142,7 @@ const checkRenewalDues = async () => {
             SELECT 1 FROM renewal_dues rd 
             WHERE rd.vehicle_id = i.vehicle_id 
               AND rd.renewal_type = 'Insurance' 
-              AND rd.due_date = i.insurance_to
+              AND DATE(rd.due_date) = DATE(i.insurance_to)
               AND rd.status != 'completed'
           )
       `;
@@ -201,7 +201,7 @@ const checkRenewalDues = async () => {
             SELECT 1 FROM renewal_dues rd 
             WHERE rd.vehicle_id = v.id 
               AND rd.renewal_type = 'Tax' 
-              AND rd.due_date = v.tax_upto
+              AND DATE(rd.due_date) = DATE(v.tax_upto)
               AND rd.status != 'completed'
           )
       `;
@@ -263,7 +263,7 @@ const checkRenewalDues = async () => {
             SELECT 1 FROM renewal_dues rd 
             WHERE rd.vehicle_id = f.vehicle_id 
               AND rd.renewal_type = 'FC' 
-              AND rd.due_date = f.fc_tenure_to
+              AND DATE(rd.due_date) = DATE(f.fc_tenure_to)
               AND rd.status != 'completed'
           )
       `;
@@ -325,7 +325,7 @@ const checkRenewalDues = async () => {
             SELECT 1 FROM renewal_dues rd 
             WHERE rd.vehicle_id = p.vehicle_id 
               AND rd.renewal_type = 'Permit' 
-              AND rd.due_date = p.permit_tenure_to
+              AND DATE(rd.due_date) = DATE(p.permit_tenure_to)
               AND rd.status != 'completed'
           )
       `;
@@ -387,7 +387,7 @@ const checkRenewalDues = async () => {
             SELECT 1 FROM renewal_dues rd 
             WHERE rd.vehicle_id = t.vehicle_id 
               AND rd.renewal_type = 'Tax' 
-              AND rd.due_date = t.tax_tenure_to
+              AND DATE(rd.due_date) = DATE(t.tax_tenure_to)
               AND rd.status != 'completed'
           )
       `;
