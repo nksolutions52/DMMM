@@ -391,149 +391,9 @@ router.post('/auto-check', authenticateToken, async (req, res) => {
   }
 });
 
-// Debug endpoint to check what's happening with the duplicate check
-router.post('/debug-duplicate-check', authenticateToken, async (req, res) => {
-  try {
-    console.log('🔍 Debug: Checking duplicate logic...');
-    
-    const currentDate = new Date().toISOString().split('T')[0];
-    const futureDate = new Date();
-    futureDate.setDate(futureDate.getDate() + 30);
-    const futureDateStr = futureDate.toISOString().split('T')[0];
-    
-    console.log(`📅 Current date: ${currentDate}`);
-    console.log(`📅 Future date: ${futureDateStr}`);
-    
-    // Check what PUC documents exist and what renewal dues exist
-    const pucDocsQuery = `
-      SELECT v.registration_number, p.puc_to, p.vehicle_id,
-             CASE 
-               WHEN p.puc_to < $1 THEN 'EXPIRED'
-               WHEN p.puc_to >= $1 AND p.puc_to <= $2 THEN 'DUE_SOON' 
-               ELSE 'FUTURE' 
-             END as category
-      FROM puc_details p
-      JOIN vehicles v ON p.vehicle_id = v.id
-      WHERE p.puc_to IS NOT NULL
-      ORDER BY p.puc_to ASC
-    `;
-    
-    const pucDocs = await pool.query(pucDocsQuery, [currentDate, futureDateStr]);
-    console.log('📋 PUC Documents found:', pucDocs.rows.length);
-    
-    // Check existing renewal dues for PUC
-    const existingPucDues = await pool.query(`
-      SELECT rd.*, v.registration_number
-      FROM renewal_dues rd
-      JOIN vehicles v ON rd.vehicle_id = v.id
-      WHERE rd.renewal_type = 'PUC'
-      ORDER BY rd.due_date ASC
-    `);
-    console.log('📋 Existing PUC renewal dues:', existingPucDues.rows.length);
-    
-    // For each PUC document, check if it would be blocked by the duplicate check
-    const duplicateCheckResults = [];
-    for (const pucDoc of pucDocs.rows) {
-      if (pucDoc.category === 'EXPIRED' || pucDoc.category === 'DUE_SOON') {
-        const duplicateCheckQuery = `
-          SELECT 1 FROM renewal_dues rd 
-          WHERE rd.vehicle_id = $1 
-            AND rd.renewal_type = 'PUC' 
-            AND DATE(rd.due_date) = DATE($2)
-            AND rd.status != 'completed'
-        `;
-        
-        const duplicateCheck = await pool.query(duplicateCheckQuery, [pucDoc.vehicle_id, pucDoc.puc_to]);
-        
-        duplicateCheckResults.push({
-          registration: pucDoc.registration_number,
-          puc_to: pucDoc.puc_to,
-          category: pucDoc.category,
-          vehicle_id: pucDoc.vehicle_id,
-          has_duplicate: duplicateCheck.rows.length > 0,
-          would_be_inserted: duplicateCheck.rows.length === 0
-        });
-      }
-    }
-    
-    console.log('🔍 Duplicate check results:');
-    duplicateCheckResults.forEach(result => {
-      console.log(`   ${result.registration}: ${result.category} - ${result.has_duplicate ? 'BLOCKED (duplicate exists)' : 'WOULD INSERT'}`);
-    });
-    
-    // Test the actual INSERT query to see what happens
-    console.log('\n🧪 Testing actual INSERT query...');
-    const testInsertQuery = `
-      SELECT 
-        p.vehicle_id,
-        'PUC' as renewal_type,
-        p.puc_to as due_date,
-        500 as amount,
-        'pending' as status,
-        v.registration_number,
-        CASE 
-          WHEN p.puc_to < $1 THEN 'EXPIRED'
-          WHEN p.puc_to >= $1 AND p.puc_to <= $2 THEN 'DUE_SOON' 
-          ELSE 'FUTURE' 
-        END as category,
-        CASE WHEN EXISTS (
-          SELECT 1 FROM renewal_dues rd 
-          WHERE rd.vehicle_id = p.vehicle_id 
-            AND rd.renewal_type = 'PUC' 
-            AND DATE(rd.due_date) = DATE(p.puc_to)
-            AND rd.status != 'completed'
-        ) THEN true ELSE false END as has_duplicate
-      FROM puc_details p
-      JOIN vehicles v ON p.vehicle_id = v.id
-      WHERE p.puc_to IS NOT NULL 
-        AND (
-          p.puc_to < $1 OR 
-          (p.puc_to >= $1 AND p.puc_to <= $2)
-        )
-    `;
-    
-    const testResult = await pool.query(testInsertQuery, [currentDate, futureDateStr]);
-    console.log('🧪 Test query results:');
-    testResult.rows.forEach(row => {
-      console.log(`   ${row.registration_number}: ${row.category} - ${row.has_duplicate ? 'BLOCKED' : 'WOULD INSERT'}`);
-    });
-    
-    const wouldInsert = testResult.rows.filter(row => !row.has_duplicate);
-    console.log(`\n📊 Summary: ${wouldInsert.length} out of ${testResult.rows.length} PUC documents would be inserted`);
-    
-    res.json({
-      success: true,
-      data: {
-        currentDate,
-        futureDateStr,
-        pucDocuments: pucDocs.rows,
-        existingPucDues: existingPucDues.rows,
-        duplicateCheckResults,
-        testQueryResults: testResult.rows,
-        summary: {
-          totalPucDocs: pucDocs.rows.length,
-          existingDues: existingPucDues.rows.length,
-          wouldInsert: wouldInsert.length
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Debug duplicate check error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
-  }
-});
-
 // Simple test endpoint to directly insert PUC renewal dues
 router.post('/test-insert-puc', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  
   try {
-    await client.query('BEGIN');
-    
     console.log('🧪 Testing direct PUC insertion...');
     
     const currentDate = new Date().toISOString().split('T')[0];
@@ -569,14 +429,10 @@ router.post('/test-insert-puc', authenticateToken, async (req, res) => {
         )
     `;
     
-    const selectResult = await client.query(selectQuery, [currentDate, futureDateStr]);
-    console.log(`📋 Found ${selectResult.rows.length} PUC documents to insert:`);
-    selectResult.rows.forEach(row => {
-      console.log(`   ${row.registration_number}: ${row.due_date}`);
-    });
+    const selectResult = await pool.query(selectQuery, [currentDate, futureDateStr]);
+    console.log(`📋 Found ${selectResult.rows.length} PUC documents to insert`);
     
     if (selectResult.rows.length === 0) {
-      await client.query('ROLLBACK');
       return res.json({
         success: true,
         message: 'No PUC documents to insert',
@@ -610,7 +466,7 @@ router.post('/test-insert-puc', authenticateToken, async (req, res) => {
         )
     `;
     
-    const insertResult = await client.query(insertQuery, [currentDate, futureDateStr]);
+    const insertResult = await pool.query(insertQuery, [currentDate, futureDateStr]);
     console.log(`✅ Successfully inserted ${insertResult.rowCount} PUC renewal dues`);
     
     // Verify the insertion
@@ -622,10 +478,8 @@ router.post('/test-insert-puc', authenticateToken, async (req, res) => {
       ORDER BY rd.created_at DESC
     `;
     
-    const verifyResult = await client.query(verifyQuery);
+    const verifyResult = await pool.query(verifyQuery);
     console.log(`📋 Total PUC renewal dues in database: ${verifyResult.rows.length}`);
-    
-    await client.query('COMMIT');
     
     res.json({
       success: true,
@@ -638,15 +492,12 @@ router.post('/test-insert-puc', authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('Test insert error:', error);
     res.status(500).json({
       success: false,
       message: 'Test insert failed',
       error: error.message
     });
-  } finally {
-    client.release();
   }
 });
 
