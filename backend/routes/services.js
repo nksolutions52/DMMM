@@ -112,32 +112,50 @@ router.get('/orders', authenticateToken, async (req, res) => {
   }
 });
 
-// Get service order by ID
+// Get service order by ID with payment history
 router.get('/orders/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const query = `
+    // Get service order details
+    const orderQuery = `
       SELECT so.*, v.registration_number, v.registered_owner_name,
-             u.name as agent_name
+             u.name as agent_name, v.makers_name, v.makers_classification,
+             v.chassis_number, v.engine_number, v.fuel_used
       FROM service_orders so
       JOIN vehicles v ON so.vehicle_id = v.id
       LEFT JOIN users u ON so.agent_id = u.id
       WHERE so.id = $1
     `;
 
-    const result = await pool.query(query, [id]);
+    const orderResult = await pool.query(orderQuery, [id]);
 
-    if (result.rows.length === 0) {
+    if (orderResult.rows.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Service order not found'
       });
     }
 
+    // Get payment history
+    const paymentQuery = `
+      SELECT soa.*, u.name as created_by_name
+      FROM service_order_amounts soa
+      LEFT JOIN users u ON soa.created_by = u.id
+      WHERE soa.service_order_id = $1
+      ORDER BY soa.created_at ASC
+    `;
+
+    const paymentResult = await pool.query(paymentQuery, [id]);
+
+    const orderData = {
+      ...orderResult.rows[0],
+      payment_history: paymentResult.rows
+    };
+
     res.json({
       success: true,
-      data: result.rows[0]
+      data: orderData
     });
   } catch (error) {
     console.error('Get service order error:', error);
@@ -150,11 +168,15 @@ router.get('/orders/:id', authenticateToken, async (req, res) => {
 
 // Create new service order
 router.post('/orders', authenticateToken, validateRequest(schemas.serviceOrder), async (req, res) => {
+  const client = await pool.connect();
+  
   try {
+    await client.query('BEGIN');
+
     const { vehicleId, serviceType, actualAmount, discount = 0, customerName } = req.body;
 
     // Verify vehicle exists
-    const vehicleResult = await pool.query('SELECT id FROM vehicles WHERE id = $1', [vehicleId]);
+    const vehicleResult = await client.query('SELECT id FROM vehicles WHERE id = $1', [vehicleId]);
     if (vehicleResult.rows.length === 0) {
       return res.status(404).json({
         success: false,
@@ -162,10 +184,11 @@ router.post('/orders', authenticateToken, validateRequest(schemas.serviceOrder),
       });
     }
 
-    // Calculate amount in backend for validation
+    // Calculate final amount after discount
     const amount = Number(actualAmount) - Number(discount);
 
-    const query = `
+    // Create service order
+    const orderQuery = `
       INSERT INTO service_orders (
         vehicle_id, service_type, actual_amount, amount, amount_paid, discount, customer_name, 
         status, agent_id, created_at
@@ -173,20 +196,35 @@ router.post('/orders', authenticateToken, validateRequest(schemas.serviceOrder),
       RETURNING id
     `;
 
-    const values = [vehicleId, serviceType, actualAmount, amount, 0, discount, customerName, 'pending', req.user.id];
-    const result = await pool.query(query, values);
+    const orderValues = [vehicleId, serviceType, actualAmount, amount, 0, discount, customerName, 'pending', req.user.id];
+    const orderResult = await client.query(orderQuery, orderValues);
+    const serviceOrderId = orderResult.rows[0].id;
+
+    // Create initial record in service_order_amounts table
+    const amountQuery = `
+      INSERT INTO service_order_amounts (
+        service_order_id, vehicle_id, amount, actual_amount, discount, payment_type, created_by, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+    `;
+
+    await client.query(amountQuery, [serviceOrderId, vehicleId, amount, actualAmount, discount, 'initial', req.user.id]);
+
+    await client.query('COMMIT');
 
     res.status(201).json({
       success: true,
       message: 'Service order created successfully',
-      data: { id: result.rows[0].id }
+      data: { id: serviceOrderId }
     });
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Create service order error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
     });
+  } finally {
+    client.release();
   }
 });
 
@@ -230,7 +268,11 @@ router.patch('/orders/:id/status', authenticateToken, async (req, res) => {
 
 // Make payment for service order
 router.post('/orders/:id/payment', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  
   try {
+    await client.query('BEGIN');
+
     const { id } = req.params;
     const { amount } = req.body;
 
@@ -242,8 +284,8 @@ router.post('/orders/:id/payment', authenticateToken, async (req, res) => {
     }
 
     // Get current service order
-    const orderResult = await pool.query(
-      'SELECT amount, amount_paid FROM service_orders WHERE id = $1',
+    const orderResult = await client.query(
+      'SELECT amount, amount_paid, vehicle_id, actual_amount, discount FROM service_orders WHERE id = $1',
       [id]
     );
 
@@ -265,19 +307,28 @@ router.post('/orders/:id/payment', authenticateToken, async (req, res) => {
       });
     }
 
-    // Update payment
-    await pool.query(
+    // Update service order amount_paid
+    await client.query(
       'UPDATE service_orders SET amount_paid = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
       [newAmountPaid, id]
     );
 
+    // Create payment record in service_order_amounts table
+    await client.query(`
+      INSERT INTO service_order_amounts (
+        service_order_id, vehicle_id, amount, actual_amount, discount, payment_type, created_by, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+    `, [id, order.vehicle_id, amount, order.actual_amount, order.discount, 'payment', req.user.id]);
+
     // If fully paid, update status to completed
     if (newAmountPaid >= totalAmount) {
-      await pool.query(
+      await client.query(
         'UPDATE service_orders SET status = $1 WHERE id = $2',
         ['completed', id]
       );
     }
+
+    await client.query('COMMIT');
 
     res.json({
       success: true,
@@ -288,11 +339,14 @@ router.post('/orders/:id/payment', authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Payment error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
     });
+  } finally {
+    client.release();
   }
 });
 

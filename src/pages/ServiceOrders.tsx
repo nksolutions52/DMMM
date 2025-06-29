@@ -3,7 +3,7 @@ import MainLayout from '../components/layout/MainLayout';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
-import { Search, FileText, MoreVertical } from 'lucide-react';
+import { Search, FileText, MoreVertical, X, Clock, CheckCircle, CreditCard, User } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
 import { servicesAPI } from '../services/api';
 import Popover from '../components/ui/Popover';
@@ -13,7 +13,9 @@ const ServiceOrders: React.FC = () => {
   const [selectedStatus, setSelectedStatus] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [orderDetails, setOrderDetails] = useState<any>(null);
   const [payAmount, setPayAmount] = useState<number>(0);
   const [popoverOpenId, setPopoverOpenId] = useState<string | null>(null);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
@@ -30,6 +32,7 @@ const ServiceOrders: React.FC = () => {
 
   const { mutate: updateOrderStatus } = useApiMutation();
   const { mutate: makePayment } = useApiMutation();
+  const { mutate: getOrderDetails } = useApiMutation();
 
   const orders = ordersData?.orders || [];
   const pagination = ordersData?.pagination;
@@ -74,8 +77,14 @@ const ServiceOrders: React.FC = () => {
     setAnchorRect(null);
   };
 
-  const handleView = (order: any) => {
-    // Navigate to order details or show details modal
+  const handleViewDetails = async (order: any) => {
+    try {
+      const details = await getOrderDetails(() => servicesAPI.getOrderById(order.id));
+      setOrderDetails(details.data);
+      setShowDetailsModal(true);
+    } catch (error) {
+      console.error('Failed to fetch order details:', error);
+    }
     setPopoverOpenId(null);
   };
 
@@ -96,6 +105,29 @@ const ServiceOrders: React.FC = () => {
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
     setCurrentPage(1);
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getTimelineIcon = (type: string) => {
+    switch (type) {
+      case 'initial':
+        return <FileText className="h-4 w-4 text-blue-600" />;
+      case 'payment':
+        return <CreditCard className="h-4 w-4 text-green-600" />;
+      case 'completed':
+        return <CheckCircle className="h-4 w-4 text-green-600" />;
+      default:
+        return <Clock className="h-4 w-4 text-gray-600" />;
+    }
   };
 
   if (loading) {
@@ -217,6 +249,7 @@ const ServiceOrders: React.FC = () => {
                     setAnchorRect(null);
                   }}
                 >
+                  <button className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm" onClick={() => handleViewDetails(order)}>View Details</button>
                   <button className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm" onClick={() => handleComplete(order)}>Complete</button>
                   <button className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm" onClick={() => handleCancel(order)}>Cancel</button>
                   <button
@@ -225,7 +258,6 @@ const ServiceOrders: React.FC = () => {
                   >
                     Pay
                   </button>
-                  <button className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm" onClick={() => handleView(order)}>View</button>
                 </Popover>
               </div>
             </div>
@@ -321,6 +353,7 @@ const ServiceOrders: React.FC = () => {
                         setAnchorRect(null);
                       }}
                     >
+                      <button className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm" onClick={() => handleViewDetails(order)}>View Details</button>
                       <button className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm" onClick={() => handleComplete(order)}>Complete</button>
                       <button className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm" onClick={() => handleCancel(order)}>Cancel</button>
                       <button
@@ -329,7 +362,6 @@ const ServiceOrders: React.FC = () => {
                       >
                         Pay
                       </button>
-                      <button className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-sm" onClick={() => handleView(order)}>View</button>
                     </Popover>
                   </td>
                 </tr>
@@ -369,6 +401,7 @@ const ServiceOrders: React.FC = () => {
         )}
       </Card>
 
+      {/* Payment Modal */}
       {showPaymentModal && selectedOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4">
           <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md relative">
@@ -376,7 +409,7 @@ const ServiceOrders: React.FC = () => {
               className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
               onClick={() => setShowPaymentModal(false)}
             >
-              ×
+              <X size={20} />
             </button>
             <h2 className="text-lg font-bold mb-4">Make Payment</h2>
             <div className="space-y-3">
@@ -418,6 +451,152 @@ const ServiceOrders: React.FC = () => {
                 >
                   Pay
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Order Details Modal */}
+      {showDetailsModal && orderDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center p-6 border-b">
+              <h2 className="text-xl font-semibold">Service Order Details</h2>
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              {/* Order Information */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="font-semibold mb-3 text-gray-800">Order Information</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Order ID:</span>
+                      <span className="font-medium">#{orderDetails.id}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Service Type:</span>
+                      <span className="font-medium">{orderDetails.service_type}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Status:</span>
+                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(orderDetails.status)}`}>
+                        {orderDetails.status}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Created:</span>
+                      <span className="font-medium">{formatDate(orderDetails.created_at)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Agent:</span>
+                      <span className="font-medium">{orderDetails.agent_name}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="font-semibold mb-3 text-gray-800">Customer & Vehicle</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Customer:</span>
+                      <span className="font-medium">{orderDetails.customer_name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Vehicle:</span>
+                      <span className="font-medium">{orderDetails.registration_number}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Make & Model:</span>
+                      <span className="font-medium">{orderDetails.makers_name} {orderDetails.makers_classification}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Fuel Type:</span>
+                      <span className="font-medium">{orderDetails.fuel_used}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Summary */}
+              <div className="bg-blue-50 rounded-lg p-4 mb-8">
+                <h3 className="font-semibold mb-3 text-gray-800">Payment Summary</h3>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">₹{orderDetails.actual_amount}</div>
+                    <div className="text-sm text-gray-600">Original Amount</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-orange-600">₹{orderDetails.discount}</div>
+                    <div className="text-sm text-gray-600">Discount</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">₹{orderDetails.amount_paid}</div>
+                    <div className="text-sm text-gray-600">Amount Paid</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-red-600">₹{Number(orderDetails.amount) - Number(orderDetails.amount_paid)}</div>
+                    <div className="text-sm text-gray-600">Pending</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Timeline */}
+              <div>
+                <h3 className="font-semibold mb-4 text-gray-800">Order Timeline</h3>
+                <div className="space-y-4">
+                  {orderDetails.payment_history && orderDetails.payment_history.map((item: any, index: number) => (
+                    <div key={item.id} className="flex items-start space-x-3">
+                      <div className="flex-shrink-0 w-8 h-8 bg-white border-2 border-gray-300 rounded-full flex items-center justify-center">
+                        {getTimelineIcon(item.payment_type)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {item.payment_type === 'initial' ? 'Order Created' : 'Payment Received'}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {item.payment_type === 'initial' 
+                                ? `Service order created for ₹${item.actual_amount} (after ₹${item.discount} discount = ₹${item.amount})`
+                                : `Payment of ₹${item.amount} received`
+                              }
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-medium text-gray-900">₹{item.amount}</p>
+                            <p className="text-xs text-gray-500">{formatDate(item.created_at)}</p>
+                            {item.created_by_name && (
+                              <p className="text-xs text-gray-500 flex items-center">
+                                <User className="h-3 w-3 mr-1" />
+                                {item.created_by_name}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {orderDetails.status === 'completed' && (
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0 w-8 h-8 bg-green-100 border-2 border-green-300 rounded-full flex items-center justify-center">
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900">Order Completed</p>
+                        <p className="text-sm text-gray-500">Service order has been completed successfully</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
