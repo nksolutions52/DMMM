@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import MainLayout from '../components/layout/MainLayout';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import { ArrowLeft, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, Edit, Trash2, Download, FileText, Image, Eye, X } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
 import { vehiclesAPI } from '../services/api';
 
@@ -60,7 +60,7 @@ const tabSections = [
   },
   {
     key: 'documents',
-    title: 'Documents & Other Details',
+    title: 'Documents',
     fields: [
       { label: 'PUC Number', key: 'puc_number' },
       { label: 'PUC Valid From', key: 'puc_from' },
@@ -75,19 +75,30 @@ const tabSections = [
 // Add a type for vehicle with index signature
 interface Vehicle {
   [key: string]: any;
+  documents?: {
+    [key: string]: Array<{
+      id: string;
+      original_name: string;
+      file_size: number;
+      mime_type: string;
+      created_at: string;
+    }>;
+  };
 }
 
 const VehicleDetails: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('basic');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  const { data, loading, error } = useApi(
+  const { data, loading, error, refetch } = useApi(
     () => vehiclesAPI.getById(id!),
     [id]
-  ) as { data: Vehicle, loading: boolean, error: any };
+  ) as { data: Vehicle, loading: boolean, error: any, refetch: () => void };
 
   const { mutate: deleteVehicle } = useApiMutation();
+  const { mutate: deleteDocument } = useApiMutation();
 
   const handleDelete = async () => {
     if (window.confirm('Are you sure you want to delete this vehicle?')) {
@@ -97,6 +108,52 @@ const VehicleDetails: React.FC = () => {
       } catch (error) {
         console.error('Delete failed:', error);
       }
+    }
+  };
+
+  const handleDeleteDocument = async (docId: string) => {
+    if (window.confirm('Are you sure you want to delete this document?')) {
+      try {
+        await deleteDocument(() => 
+          fetch(`/api/vehicles/documents/${docId}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            }
+          })
+        );
+        refetch(); // Refresh vehicle data
+      } catch (error) {
+        console.error('Delete document failed:', error);
+        alert('Failed to delete document. Please try again.');
+      }
+    }
+  };
+
+  const handleDownloadDocument = (docId: string) => {
+    window.open(`/api/vehicles/documents/${docId}/download`, '_blank');
+  };
+
+  const getFileIcon = (fileName: string, mimeType: string) => {
+    const isPdf = mimeType?.includes('pdf') || fileName.toLowerCase().endsWith('.pdf');
+    return isPdf ? <FileText className="h-4 w-4" /> : <Image className="h-4 w-4" />;
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const isImageFile = (mimeType: string) => {
+    return mimeType && mimeType.startsWith('image/');
+  };
+
+  const handleImagePreview = (docId: string, mimeType: string) => {
+    if (isImageFile(mimeType)) {
+      setSelectedImage(`/api/vehicles/documents/${docId}/download`);
     }
   };
 
@@ -184,28 +241,140 @@ const VehicleDetails: React.FC = () => {
             activeTab === tab.key && (
               <div key={tab.key}>
                 <h3 className="text-lg font-medium text-gray-800 mb-4">{tab.title}</h3>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                  {tab.fields.map(field => {
-                    // List of keys that are dates
-                    const dateFields = [
-                      'date_of_registration', 'registration_valid_upto', 'tax_upto', 'insurance_upto', 'fc_valid_upto', 'permit_upto',
-                      'puc_from', 'puc_to', 'insurance_from', 'insurance_to'
-                    ];
-                    const value = data[field.key];
-                    const displayValue = dateFields.includes(field.key) ? formatDate(value) : (value || '-');
-                    return (
-                      <div key={field.key}>
-                        <span className="block text-xs text-gray-500 mb-1">{field.label}</span>
-                        <span className="font-medium text-gray-900 break-words">{displayValue}</span>
+                
+                {tab.key === 'documents' ? (
+                  <div>
+                    {/* Document Details */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-8">
+                      {tab.fields.map(field => {
+                        const dateFields = [
+                          'date_of_registration', 'registration_valid_upto', 'tax_upto', 'insurance_upto', 'fc_valid_upto', 'permit_upto',
+                          'puc_from', 'puc_to', 'insurance_from', 'insurance_to'
+                        ];
+                        const value = data[field.key];
+                        const displayValue = dateFields.includes(field.key) ? formatDate(value) : (value || '-');
+                        return (
+                          <div key={field.key}>
+                            <span className="block text-xs text-gray-500 mb-1">{field.label}</span>
+                            <span className="font-medium text-gray-900 break-words">{displayValue}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Document Files */}
+                    {data.documents && Object.keys(data.documents).length > 0 && (
+                      <div>
+                        <h4 className="text-lg font-medium text-gray-800 mb-4">Uploaded Documents</h4>
+                        <div className="space-y-6">
+                          {Object.entries(data.documents).map(([docType, files]) => (
+                            <div key={docType} className="bg-gray-50 rounded-lg p-4">
+                              <h5 className="font-medium text-gray-700 mb-3 capitalize">
+                                {docType} Documents ({files.length})
+                              </h5>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {files.map((file) => (
+                                  <div key={file.id} className="bg-white rounded-lg border p-3">
+                                    <div className="flex items-start justify-between mb-2">
+                                      <div className="flex items-center space-x-2 min-w-0 flex-1">
+                                        {getFileIcon(file.original_name, file.mime_type)}
+                                        <span className="text-sm text-gray-700 truncate" title={file.original_name}>
+                                          {file.original_name}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="text-xs text-gray-500 mb-3">
+                                      {formatFileSize(file.file_size)} • {new Date(file.created_at).toLocaleDateString()}
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      {isImageFile(file.mime_type) && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleImagePreview(file.id, file.mime_type)}
+                                          className="p-1 text-blue-600 hover:text-blue-800"
+                                          title="Preview"
+                                        >
+                                          <Eye className="h-4 w-4" />
+                                        </Button>
+                                      )}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleDownloadDocument(file.id)}
+                                        className="p-1 text-green-600 hover:text-green-800"
+                                        title="Download"
+                                      >
+                                        <Download className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleDeleteDocument(file.id)}
+                                        className="p-1 text-red-600 hover:text-red-800"
+                                        title="Delete"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    );
-                  })}
-                </div>
+                    )}
+
+                    {(!data.documents || Object.keys(data.documents).length === 0) && (
+                      <div className="text-center py-8 text-gray-500">
+                        <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                        <p>No documents uploaded for this vehicle.</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                    {tab.fields.map(field => {
+                      const dateFields = [
+                        'date_of_registration', 'registration_valid_upto', 'tax_upto', 'insurance_upto', 'fc_valid_upto', 'permit_upto',
+                        'puc_from', 'puc_to', 'insurance_from', 'insurance_to'
+                      ];
+                      const value = data[field.key];
+                      const displayValue = dateFields.includes(field.key) ? formatDate(value) : (value || '-');
+                      return (
+                        <div key={field.key}>
+                          <span className="block text-xs text-gray-500 mb-1">{field.label}</span>
+                          <span className="font-medium text-gray-900 break-words">{displayValue}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )
           ))}
         </div>
       </div>
+
+      {/* Image Preview Modal */}
+      {selectedImage && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="relative max-w-4xl max-h-full">
+            <button
+              onClick={() => setSelectedImage(null)}
+              className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
+            >
+              <X size={24} />
+            </button>
+            <img
+              src={selectedImage}
+              alt="Document preview"
+              className="max-w-full max-h-full object-contain rounded-lg"
+            />
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 };

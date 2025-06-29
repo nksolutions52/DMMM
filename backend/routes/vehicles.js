@@ -1,7 +1,6 @@
 const express = require('express');
 const pool = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
-const { validateRequest, schemas } = require('../middleware/validation');
 const { uploadDocuments } = require('../middleware/upload');
 const path = require('path');
 const fs = require('fs');

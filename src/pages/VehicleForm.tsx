@@ -96,6 +96,15 @@ function toDateInputValue(dateString: string | undefined): string {
 // Add a type for vehicle with index signature
 interface Vehicle {
   [key: string]: any;
+  documents?: {
+    [key: string]: Array<{
+      id: string;
+      original_name: string;
+      file_size: number;
+      mime_type: string;
+      created_at: string;
+    }>;
+  };
 }
 
 const VehicleForm: React.FC = () => {
