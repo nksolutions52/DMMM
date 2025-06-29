@@ -527,4 +527,127 @@ router.post('/debug-duplicate-check', authenticateToken, async (req, res) => {
   }
 });
 
+// Simple test endpoint to directly insert PUC renewal dues
+router.post('/test-insert-puc', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    console.log('🧪 Testing direct PUC insertion...');
+    
+    const currentDate = new Date().toISOString().split('T')[0];
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + 30);
+    const futureDateStr = futureDate.toISOString().split('T')[0];
+    
+    console.log(`📅 Current date: ${currentDate}`);
+    console.log(`📅 Future date: ${futureDateStr}`);
+    
+    // Get PUC documents that should be inserted
+    const selectQuery = `
+      SELECT DISTINCT
+        p.vehicle_id,
+        'PUC' as renewal_type,
+        p.puc_to as due_date,
+        500 as amount,
+        'pending' as status,
+        v.registration_number
+      FROM puc_details p
+      JOIN vehicles v ON p.vehicle_id = v.id
+      WHERE p.puc_to IS NOT NULL 
+        AND (
+          p.puc_to < $1 OR 
+          (p.puc_to >= $1 AND p.puc_to <= $2)
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM renewal_dues rd 
+          WHERE rd.vehicle_id = p.vehicle_id 
+            AND rd.renewal_type = 'PUC' 
+            AND DATE(rd.due_date) = DATE(p.puc_to)
+            AND rd.status != 'completed'
+        )
+    `;
+    
+    const selectResult = await client.query(selectQuery, [currentDate, futureDateStr]);
+    console.log(`📋 Found ${selectResult.rows.length} PUC documents to insert:`);
+    selectResult.rows.forEach(row => {
+      console.log(`   ${row.registration_number}: ${row.due_date}`);
+    });
+    
+    if (selectResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.json({
+        success: true,
+        message: 'No PUC documents to insert',
+        data: { inserted: 0, found: 0 }
+      });
+    }
+    
+    // Now try to insert them
+    const insertQuery = `
+      INSERT INTO renewal_dues (vehicle_id, renewal_type, due_date, amount, status, created_at)
+      SELECT DISTINCT
+        p.vehicle_id,
+        'PUC' as renewal_type,
+        p.puc_to as due_date,
+        500 as amount,
+        'pending' as status,
+        CURRENT_TIMESTAMP
+      FROM puc_details p
+      JOIN vehicles v ON p.vehicle_id = v.id
+      WHERE p.puc_to IS NOT NULL 
+        AND (
+          p.puc_to < $1 OR 
+          (p.puc_to >= $1 AND p.puc_to <= $2)
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM renewal_dues rd 
+          WHERE rd.vehicle_id = p.vehicle_id 
+            AND rd.renewal_type = 'PUC' 
+            AND DATE(rd.due_date) = DATE(p.puc_to)
+            AND rd.status != 'completed'
+        )
+    `;
+    
+    const insertResult = await client.query(insertQuery, [currentDate, futureDateStr]);
+    console.log(`✅ Successfully inserted ${insertResult.rowCount} PUC renewal dues`);
+    
+    // Verify the insertion
+    const verifyQuery = `
+      SELECT rd.*, v.registration_number
+      FROM renewal_dues rd
+      JOIN vehicles v ON rd.vehicle_id = v.id
+      WHERE rd.renewal_type = 'PUC'
+      ORDER BY rd.created_at DESC
+    `;
+    
+    const verifyResult = await client.query(verifyQuery);
+    console.log(`📋 Total PUC renewal dues in database: ${verifyResult.rows.length}`);
+    
+    await client.query('COMMIT');
+    
+    res.json({
+      success: true,
+      message: `Successfully inserted ${insertResult.rowCount} PUC renewal dues`,
+      data: {
+        inserted: insertResult.rowCount,
+        found: selectResult.rows.length,
+        total_in_db: verifyResult.rows.length,
+        inserted_records: verifyResult.rows.slice(0, insertResult.rowCount)
+      }
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Test insert error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Test insert failed',
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;
