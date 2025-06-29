@@ -391,4 +391,90 @@ router.post('/auto-check', authenticateToken, async (req, res) => {
   }
 });
 
+// Debug endpoint to check document dates
+router.get('/debug/document-dates', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔍 Debug: Checking document dates...');
+    
+    const currentDate = new Date().toISOString().split('T')[0];
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + 30);
+    const futureDateStr = futureDate.toISOString().split('T')[0];
+    
+    console.log(`Current date: ${currentDate}`);
+    console.log(`Future date (30 days): ${futureDateStr}`);
+    
+    // Check PUC documents
+    const pucDocs = await pool.query(`
+      SELECT v.registration_number, p.puc_to, 
+             CASE WHEN p.puc_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status
+      FROM puc_details p
+      JOIN vehicles v ON p.vehicle_id = v.id
+      WHERE p.puc_to IS NOT NULL
+      ORDER BY p.puc_to ASC
+    `, [futureDateStr]);
+    
+    // Check Insurance documents
+    const insuranceDocs = await pool.query(`
+      SELECT v.registration_number, i.insurance_to,
+             CASE WHEN i.insurance_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status
+      FROM insurance_details i
+      JOIN vehicles v ON i.vehicle_id = v.id
+      WHERE i.insurance_to IS NOT NULL
+      ORDER BY i.insurance_to ASC
+    `, [futureDateStr]);
+    
+    // Check Tax from vehicles table
+    const taxDocs = await pool.query(`
+      SELECT v.registration_number, v.tax_upto,
+             CASE WHEN v.tax_upto <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status
+      FROM vehicles v
+      WHERE v.tax_upto IS NOT NULL
+      ORDER BY v.tax_upto ASC
+    `, [futureDateStr]);
+    
+    // Check Fitness documents
+    const fitnessDocs = await pool.query(`
+      SELECT v.registration_number, f.fc_tenure_to,
+             CASE WHEN f.fc_tenure_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status
+      FROM fitness_details f
+      JOIN vehicles v ON f.vehicle_id = v.id
+      WHERE f.fc_tenure_to IS NOT NULL AND v.type = 'Transport'
+      ORDER BY f.fc_tenure_to ASC
+    `, [futureDateStr]);
+    
+    // Check Permit documents
+    const permitDocs = await pool.query(`
+      SELECT v.registration_number, p.permit_tenure_to,
+             CASE WHEN p.permit_tenure_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status
+      FROM permit_details p
+      JOIN vehicles v ON p.vehicle_id = v.id
+      WHERE p.permit_tenure_to IS NOT NULL AND v.type = 'Transport'
+      ORDER BY p.permit_tenure_to ASC
+    `, [futureDateStr]);
+    
+    res.json({
+      success: true,
+      data: {
+        currentDate,
+        checkingUntil: futureDateStr,
+        documents: {
+          puc: pucDocs.rows,
+          insurance: insuranceDocs.rows,
+          tax: taxDocs.rows,
+          fitness: fitnessDocs.rows,
+          permit: permitDocs.rows
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Debug document dates error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

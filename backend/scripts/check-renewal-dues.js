@@ -13,7 +13,10 @@ const checkRenewalDues = async () => {
     const futureDate = new Date();
     futureDate.setDate(currentDate.getDate() + 30);
     
+    const currentDateStr = currentDate.toISOString().split('T')[0];
     const futureDateStr = futureDate.toISOString().split('T')[0];
+    
+    console.log(`📅 Checking for renewals from ${currentDateStr} to ${futureDateStr}`);
     
     let totalAdded = 0;
     const results = {
@@ -25,7 +28,7 @@ const checkRenewalDues = async () => {
       taxDetails: 0
     };
     
-    // Check PUC renewals
+    // Check PUC renewals - documents expiring within 30 days or already expired
     console.log('📋 Checking PUC renewals...');
     try {
       const pucQuery = `
@@ -57,7 +60,7 @@ const checkRenewalDues = async () => {
       results.puc = 0;
     }
     
-    // Check Insurance renewals
+    // Check Insurance renewals - documents expiring within 30 days or already expired
     console.log('🛡️ Checking Insurance renewals...');
     try {
       const insuranceQuery = `
@@ -89,8 +92,8 @@ const checkRenewalDues = async () => {
       results.insurance = 0;
     }
     
-    // Check Tax renewals (from vehicles table)
-    console.log('💰 Checking Tax renewals...');
+    // Check Tax renewals (from vehicles table) - documents expiring within 30 days or already expired
+    console.log('💰 Checking Tax renewals from vehicles table...');
     try {
       const taxQuery = `
         INSERT INTO renewal_dues (vehicle_id, renewal_type, due_date, amount, status, created_at)
@@ -114,13 +117,13 @@ const checkRenewalDues = async () => {
       `;
       const taxResult = await client.query(taxQuery, [futureDateStr]);
       results.tax = taxResult.rowCount || 0;
-      console.log(`✅ Added ${results.tax} Tax renewal dues`);
+      console.log(`✅ Added ${results.tax} Tax renewal dues from vehicles table`);
     } catch (error) {
-      console.error('Error checking Tax renewals:', error);
+      console.error('Error checking Tax renewals from vehicles table:', error);
       results.tax = 0;
     }
     
-    // Check Fitness renewals (Transport vehicles only)
+    // Check Fitness renewals (Transport vehicles only) - documents expiring within 30 days or already expired
     console.log('🔧 Checking Fitness renewals...');
     try {
       const fitnessQuery = `
@@ -153,7 +156,7 @@ const checkRenewalDues = async () => {
       results.fitness = 0;
     }
     
-    // Check Permit renewals (Transport vehicles only)
+    // Check Permit renewals (Transport vehicles only) - documents expiring within 30 days or already expired
     console.log('📄 Checking Permit renewals...');
     try {
       const permitQuery = `
@@ -186,7 +189,7 @@ const checkRenewalDues = async () => {
       results.permit = 0;
     }
     
-    // Check Tax renewals from tax_details table (Transport vehicles)
+    // Check Tax renewals from tax_details table (Transport vehicles) - documents expiring within 30 days or already expired
     console.log('💳 Checking Tax details renewals...');
     try {
       const taxDetailsQuery = `
@@ -224,13 +227,35 @@ const checkRenewalDues = async () => {
     totalAdded = results.puc + results.insurance + results.tax + results.fitness + results.permit + results.taxDetails;
     
     console.log(`🎉 Renewal dues check completed! Total new dues added: ${totalAdded}`);
+    console.log('📊 Breakdown:', results);
+    
+    // Also check for overdue documents (already expired)
+    console.log('🚨 Checking for overdue documents...');
+    const overdueQuery = `
+      SELECT 
+        rd.renewal_type,
+        COUNT(*) as overdue_count
+      FROM renewal_dues rd
+      WHERE rd.due_date < CURRENT_DATE
+        AND rd.status = 'pending'
+      GROUP BY rd.renewal_type
+    `;
+    
+    const overdueResult = await client.query(overdueQuery);
+    if (overdueResult.rows.length > 0) {
+      console.log('⚠️ Overdue documents found:');
+      overdueResult.rows.forEach(row => {
+        console.log(`   ${row.renewal_type}: ${row.overdue_count} overdue`);
+      });
+    }
     
     return {
       success: true,
       message: `Renewal dues check completed successfully`,
       data: {
         ...results,
-        total: totalAdded
+        total: totalAdded,
+        overdue: overdueResult.rows
       }
     };
     
