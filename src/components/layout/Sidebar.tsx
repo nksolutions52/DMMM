@@ -73,8 +73,8 @@ const Sidebar: React.FC = () => {
         </nav>
         <div className="px-4 pb-8">
           <button
-            onClick={() => {
-              logout();
+            onClick={async () => {
+              await logout();
               navigate('/login');
               closeMobileMenu();
             }}

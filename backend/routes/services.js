@@ -151,7 +151,7 @@ router.get('/orders/:id', authenticateToken, async (req, res) => {
 // Create new service order
 router.post('/orders', authenticateToken, validateRequest(schemas.serviceOrder), async (req, res) => {
   try {
-    const { vehicleId, serviceType, amount, customerName, discount = 0 } = req.body;
+    const { vehicleId, serviceType, actualAmount, discount = 0, customerName } = req.body;
 
     // Verify vehicle exists
     const vehicleResult = await pool.query('SELECT id FROM vehicles WHERE id = $1', [vehicleId]);
@@ -162,17 +162,18 @@ router.post('/orders', authenticateToken, validateRequest(schemas.serviceOrder),
       });
     }
 
-    const finalAmount = amount - discount;
+    // Calculate amount in backend for validation
+    const amount = Number(actualAmount) - Number(discount);
 
     const query = `
       INSERT INTO service_orders (
-        vehicle_id, service_type, amount, amount_paid, discount, customer_name, 
+        vehicle_id, service_type, actual_amount, amount, amount_paid, discount, customer_name, 
         status, agent_id, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
       RETURNING id
     `;
 
-    const values = [vehicleId, serviceType, finalAmount, 0, discount, customerName, 'pending', req.user.id];
+    const values = [vehicleId, serviceType, actualAmount, amount, 0, discount, customerName, 'pending', req.user.id];
     const result = await pool.query(query, values);
 
     res.status(201).json({

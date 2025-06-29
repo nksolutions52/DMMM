@@ -56,7 +56,7 @@ const schemas = {
   serviceOrder: Joi.object({
     vehicleId: Joi.string().uuid().required(),
     serviceType: Joi.string().required(),
-    amount: Joi.number().positive().required(),
+    actualAmount: Joi.number().positive().required(),
     customerName: Joi.string().required(),
     discount: Joi.number().min(0).default(0)
   }),

@@ -54,10 +54,10 @@ const Services: React.FC = () => {
     try {
       const orderData = {
         vehicleId: vehicleData.id,
-        serviceType: services?.find((s: any) => s.id === selectedService)?.name || selectedService,
-        amount: Math.max(selectedServiceFee - discount, 0),
-        customerName: vehicleData.registered_owner_name,
-        discount
+        serviceType: selectedService, // send the service id, e.g., 'pollution'
+        actualAmount: selectedServiceFee, // send actualAmount (fee before discount)
+        discount,
+        customerName: vehicleData.registered_owner_name
       };
 
       await createOrder(() => servicesAPI.createOrder(orderData));
