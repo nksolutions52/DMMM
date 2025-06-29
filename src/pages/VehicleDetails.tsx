@@ -107,6 +107,7 @@ const VehicleDetails: React.FC = () => {
         navigate('/vehicles');
       } catch (error) {
         console.error('Delete failed:', error);
+        alert('Failed to delete vehicle. Please try again.');
       }
     }
   };
@@ -114,15 +115,9 @@ const VehicleDetails: React.FC = () => {
   const handleDeleteDocument = async (docId: string) => {
     if (window.confirm('Are you sure you want to delete this document?')) {
       try {
-        await deleteDocument(() => 
-          fetch(`/api/vehicles/documents/${docId}`, {
-            method: 'DELETE',
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-            }
-          })
-        );
+        await deleteDocument(() => vehiclesAPI.deleteDocument(docId));
         refetch(); // Refresh vehicle data
+        alert('Document deleted successfully!');
       } catch (error) {
         console.error('Delete document failed:', error);
         alert('Failed to delete document. Please try again.');
@@ -130,8 +125,41 @@ const VehicleDetails: React.FC = () => {
     }
   };
 
-  const handleDownloadDocument = (docId: string) => {
-    window.open(`/api/vehicles/documents/${docId}/download`, '_blank');
+  const handleDownloadDocument = (docId: string, fileName: string) => {
+    const token = localStorage.getItem('authToken');
+    const url = `http://localhost:5000/api/vehicles/documents/${docId}/download`;
+    
+    // Create a temporary link and click it to download
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    link.style.display = 'none';
+    
+    // Add authorization header by creating a fetch request and converting to blob
+    if (token) {
+      fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      .then(response => response.blob())
+      .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        link.href = url;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      })
+      .catch(error => {
+        console.error('Download failed:', error);
+        alert('Failed to download document. Please try again.');
+      });
+    } else {
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   const getFileIcon = (fileName: string, mimeType: string) => {
@@ -153,7 +181,15 @@ const VehicleDetails: React.FC = () => {
 
   const handleImagePreview = (docId: string, mimeType: string) => {
     if (isImageFile(mimeType)) {
-      setSelectedImage(`/api/vehicles/documents/${docId}/download`);
+      const token = localStorage.getItem('authToken');
+      const url = `http://localhost:5000/api/vehicles/documents/${docId}/download`;
+      
+      if (token) {
+        // For images, we can set the URL directly with auth header handling
+        setSelectedImage(`${url}?auth=${token}`);
+      } else {
+        setSelectedImage(url);
+      }
     }
   };
 
@@ -301,7 +337,7 @@ const VehicleDetails: React.FC = () => {
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        onClick={() => handleDownloadDocument(file.id)}
+                                        onClick={() => handleDownloadDocument(file.id, file.original_name)}
                                         className="p-1 text-green-600 hover:text-green-800"
                                         title="Download"
                                       >
@@ -371,6 +407,11 @@ const VehicleDetails: React.FC = () => {
               src={selectedImage}
               alt="Document preview"
               className="max-w-full max-h-full object-contain rounded-lg"
+              onError={() => {
+                console.error('Failed to load image');
+                setSelectedImage(null);
+                alert('Failed to load image preview');
+              }}
             />
           </div>
         </div>

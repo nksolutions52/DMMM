@@ -116,6 +116,43 @@ const FileUpload: React.FC<FileUploadProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const handleDownloadExisting = (fileId: string, fileName: string) => {
+    const token = localStorage.getItem('authToken');
+    const url = `http://localhost:5000/api/vehicles/documents/${fileId}/download`;
+    
+    // Create a temporary link and click it to download
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    link.style.display = 'none';
+    
+    // Add authorization header by creating a fetch request and converting to blob
+    if (token) {
+      fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      .then(response => response.blob())
+      .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        link.href = url;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      })
+      .catch(error => {
+        console.error('Download failed:', error);
+        alert('Failed to download document. Please try again.');
+      });
+    } else {
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
   return (
     <div className={`mb-4 ${className}`}>
       <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -174,7 +211,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => window.open(`/api/vehicles/documents/${file.id}/download`, '_blank')}
+                    onClick={() => handleDownloadExisting(file.id, file.original_name)}
                     className="p-1"
                   >
                     <Download className="h-4 w-4" />

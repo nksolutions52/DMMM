@@ -14,6 +14,14 @@ const getAuthHeaders = () => {
   };
 };
 
+// Create headers for file uploads (without Content-Type)
+const getFileUploadHeaders = () => {
+  const token = getAuthToken();
+  return {
+    ...(token && { 'Authorization': `Bearer ${token}` })
+  };
+};
+
 // Generic API request function
 const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
@@ -33,6 +41,54 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
     return data;
   } catch (error) {
     console.error('API Error:', error);
+    throw error;
+  }
+};
+
+// File upload API request function
+const fileUploadRequest = async (endpoint: string, formData: FormData) => {
+  const url = `${API_BASE_URL}${endpoint}`;
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: getFileUploadHeaders(),
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'File upload failed');
+    }
+
+    return data;
+  } catch (error) {
+    console.error('File Upload Error:', error);
+    throw error;
+  }
+};
+
+// File update API request function
+const fileUpdateRequest = async (endpoint: string, formData: FormData) => {
+  const url = `${API_BASE_URL}${endpoint}`;
+  
+  try {
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: getFileUploadHeaders(),
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || 'File update failed');
+    }
+
+    return data;
+  } catch (error) {
+    console.error('File Update Error:', error);
     throw error;
   }
 };
@@ -85,18 +141,12 @@ export const vehiclesAPI = {
     return await apiRequest(`/vehicles/${id}`);
   },
 
-  create: async (vehicleData: any) => {
-    return await apiRequest('/vehicles', {
-      method: 'POST',
-      body: JSON.stringify(vehicleData),
-    });
+  create: async (formData: FormData) => {
+    return await fileUploadRequest('/vehicles', formData);
   },
 
-  update: async (id: string, vehicleData: any) => {
-    return await apiRequest(`/vehicles/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(vehicleData),
-    });
+  update: async (id: string, formData: FormData) => {
+    return await fileUpdateRequest(`/vehicles/${id}`, formData);
   },
 
   delete: async (id: string) => {
@@ -107,6 +157,28 @@ export const vehiclesAPI = {
 
   searchByRegistration: async (registrationNumber: string) => {
     return await apiRequest(`/vehicles/search/${registrationNumber}`);
+  },
+
+  deleteDocument: async (documentId: string) => {
+    return await apiRequest(`/vehicles/documents/${documentId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  downloadDocument: (documentId: string) => {
+    const token = getAuthToken();
+    const url = `${API_BASE_URL}/vehicles/documents/${documentId}/download`;
+    
+    // Create a temporary link and click it to download
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', '');
+    if (token) {
+      link.setAttribute('Authorization', `Bearer ${token}`);
+    }
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 };
 

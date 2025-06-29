@@ -121,11 +121,11 @@ const VehicleForm: React.FC = () => {
   });
 
   // Only fetch vehicle data if we have an ID (editing mode)
-  const { data: vehicle, loading, error } = useApi(
+  const { data: vehicle, loading, error, refetch } = useApi(
     () => id ? vehiclesAPI.getById(id) : Promise.resolve(null),
     [id],
     !id // Skip API call if no ID
-  ) as { data: Vehicle | null, loading: boolean, error: any };
+  ) as { data: Vehicle | null, loading: boolean, error: any, refetch: () => void };
 
   const { mutate: saveVehicle, loading: saving } = useApiMutation();
   const { mutate: deleteDocument } = useApiMutation();
@@ -213,16 +213,12 @@ const VehicleForm: React.FC = () => {
   const handleDeleteExistingDocument = async (fileId: string) => {
     if (window.confirm('Are you sure you want to delete this document?')) {
       try {
-        await deleteDocument(() => 
-          fetch(`/api/vehicles/documents/${fileId}`, {
-            method: 'DELETE',
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-            }
-          })
-        );
+        await deleteDocument(() => vehiclesAPI.deleteDocument(fileId));
         // Refresh vehicle data to update the documents list
-        window.location.reload();
+        if (refetch) {
+          refetch();
+        }
+        alert('Document deleted successfully!');
       } catch (error) {
         console.error('Delete document failed:', error);
         alert('Failed to delete document. Please try again.');
@@ -256,18 +252,12 @@ const VehicleForm: React.FC = () => {
         }
       });
 
-      const url = id ? `/api/vehicles/${id}` : '/api/vehicles';
-      const method = id ? 'PUT' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        },
-        body: formData
-      });
-
-      const result = await response.json();
+      let result;
+      if (id) {
+        result = await saveVehicle(() => vehiclesAPI.update(id, formData));
+      } else {
+        result = await saveVehicle(() => vehiclesAPI.create(formData));
+      }
 
       if (result.success) {
         alert(id ? 'Vehicle updated successfully!' : 'Vehicle registered successfully!');
@@ -277,7 +267,7 @@ const VehicleForm: React.FC = () => {
       }
     } catch (error) {
       console.error('Save failed:', error);
-      alert('Failed to save vehicle. Please try again.');
+      alert(`Failed to save vehicle: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
