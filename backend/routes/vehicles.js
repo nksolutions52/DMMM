@@ -13,7 +13,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
     let query = `
       SELECT v.*, 
-             p.puc_number, p.puc_from, p.puc_to, p.puc_contact_no, p.puc_address,
+             p.puc_number, p.puc_from, p.puc_to, puc_contact_no, p.puc_address,
              i.company_name as insurance_company_name, i.policy_number, i.insurance_type,
              i.insurance_from, i.insurance_to, i.insurance_contact_no, i.insurance_address
       FROM vehicles v
@@ -91,7 +91,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
     const query = `
       SELECT v.*, 
-             p.puc_number, p.puc_date, p.puc_tenure, p.puc_from, p.puc_to, p.puc_contact_no, p.puc_address,
+             p.puc_number, p.puc_date, puc_tenure, p.puc_from, p.puc_to, p.puc_contact_no, p.puc_address,
              i.company_name as insurance_company_name, i.policy_number, i.insurance_type,
              i.insurance_date, i.insurance_tenure, i.insurance_from, i.insurance_to, 
              i.insurance_contact_no, i.insurance_address,
@@ -137,6 +137,10 @@ router.post('/', authenticateToken, validateRequest(schemas.vehicle), async (req
     await client.query('BEGIN');
 
     const vehicleData = req.body;
+    // Convert all empty string values to null
+    Object.keys(vehicleData).forEach(key => {
+      if (vehicleData[key] === '') vehicleData[key] = null;
+    });
     
     // Insert vehicle
     const vehicleQuery = `
@@ -221,20 +225,12 @@ router.post('/', authenticateToken, validateRequest(schemas.vehicle), async (req
 
     res.status(201).json({
       success: true,
-      message: 'Vehicle registered successfully',
+      message: 'Vehicle created successfully',
       data: { id: vehicleId }
     });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Create vehicle error:', error);
-    
-    if (error.code === '23505') { // Unique constraint violation
-      return res.status(400).json({
-        success: false,
-        message: 'Vehicle with this registration number already exists'
-      });
-    }
-    
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -244,7 +240,7 @@ router.post('/', authenticateToken, validateRequest(schemas.vehicle), async (req
   }
 });
 
-// Update vehicle
+// Update vehicle by ID
 router.put('/:id', authenticateToken, validateRequest(schemas.vehicle), async (req, res) => {
   const client = await pool.connect();
   
@@ -253,28 +249,23 @@ router.put('/:id', authenticateToken, validateRequest(schemas.vehicle), async (r
 
     const { id } = req.params;
     const vehicleData = req.body;
-
-    // Check if vehicle exists
-    const existingVehicle = await client.query('SELECT id FROM vehicles WHERE id = $1', [id]);
-    if (existingVehicle.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Vehicle not found'
-      });
-    }
+    // Convert all empty string values to null
+    Object.keys(vehicleData).forEach(key => {
+      if (vehicleData[key] === '') vehicleData[key] = null;
+    });
 
     // Update vehicle
     const vehicleQuery = `
-      UPDATE vehicles SET
-        aadhar_number = $1, mobile_number = $2, registered_owner_name = $3,
-        registration_number = $4, guardian_info = $5, date_of_registration = $6,
-        address = $7, registration_valid_upto = $8, tax_upto = $9, insurance_upto = $10,
-        fc_valid_upto = $11, hypothecated_to = $12, permit_upto = $13, chassis_number = $14,
-        body_type = $15, engine_number = $16, colour = $17, vehicle_class = $18,
+      UPDATE vehicles
+      SET 
+        aadhar_number = $1, mobile_number = $2, registered_owner_name = $3, registration_number = $4,
+        guardian_info = $5, date_of_registration = $6, address = $7, registration_valid_upto = $8,
+        tax_upto = $9, insurance_upto = $10, fc_valid_upto = $11, hypothecated_to = $12, permit_upto = $13,
+        chassis_number = $14, body_type = $15, engine_number = $16, colour = $17, vehicle_class = $18,
         fuel_used = $19, makers_name = $20, cubic_capacity = $21, makers_classification = $22,
-        seating_capacity = $23, month_year_of_manufacture = $24, ulw = $25, gvw = $26,
-        subject = $27, registering_authority = $28, type = $29, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $30
+        seating_capacity = $23, month_year_of_manufacture = $24, ulw = $25, gvw = $26, subject = $27,
+        registering_authority = $28, type = $29, updated_at = NOW(), updated_by = $30
+      WHERE id = $31
     `;
 
     const vehicleValues = [
@@ -287,56 +278,90 @@ router.put('/:id', authenticateToken, validateRequest(schemas.vehicle), async (r
       vehicleData.fuelUsed, vehicleData.makersName, vehicleData.cubicCapacity,
       vehicleData.makersClassification, vehicleData.seatingCapacity,
       vehicleData.monthYearOfManufacture, vehicleData.ulw, vehicleData.gvw,
-      vehicleData.subject, vehicleData.registeringAuthority, vehicleData.type, id
+      vehicleData.subject, vehicleData.registeringAuthority, vehicleData.type,
+      req.user.id, id
     ];
 
     await client.query(vehicleQuery, vehicleValues);
 
-    // Update related details (delete and insert)
-    await client.query('DELETE FROM puc_details WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM insurance_details WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM fitness_details WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM permit_details WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM tax_details WHERE vehicle_id = $1', [id]);
-
-    // Re-insert details (same logic as create)
+    // Update PUC details if provided
     if (vehicleData.pucNumber) {
       await client.query(`
         INSERT INTO puc_details (vehicle_id, puc_number, puc_date, puc_tenure, puc_from, puc_to, puc_contact_no, puc_address)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (vehicle_id) DO UPDATE SET 
+          puc_number = EXCLUDED.puc_number,
+          puc_date = EXCLUDED.puc_date,
+          puc_tenure = EXCLUDED.puc_tenure,
+          puc_from = EXCLUDED.puc_from,
+          puc_to = EXCLUDED.puc_to,
+          puc_contact_no = EXCLUDED.puc_contact_no,
+          puc_address = EXCLUDED.puc_address
       `, [id, vehicleData.pucNumber, vehicleData.pucDate, vehicleData.pucTenure,
           vehicleData.pucFrom, vehicleData.pucTo, vehicleData.pucContactNo, vehicleData.pucAddress]);
     }
 
+    // Update Insurance details if provided
     if (vehicleData.insuranceCompanyName) {
       await client.query(`
         INSERT INTO insurance_details (vehicle_id, company_name, policy_number, insurance_type, insurance_date, insurance_tenure, insurance_from, insurance_to, insurance_contact_no, insurance_address)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ON CONFLICT (vehicle_id) DO UPDATE SET 
+          company_name = EXCLUDED.company_name,
+          policy_number = EXCLUDED.policy_number,
+          insurance_type = EXCLUDED.insurance_type,
+          insurance_date = EXCLUDED.insurance_date,
+          insurance_tenure = EXCLUDED.insurance_tenure,
+          insurance_from = EXCLUDED.insurance_from,
+          insurance_to = EXCLUDED.insurance_to,
+          insurance_contact_no = EXCLUDED.insurance_contact_no,
+          insurance_address = EXCLUDED.insurance_address
       `, [id, vehicleData.insuranceCompanyName, vehicleData.policyNumber, vehicleData.insuranceType,
           vehicleData.insuranceDate, vehicleData.insuranceTenure, vehicleData.insuranceFrom,
           vehicleData.insuranceTo, vehicleData.insuranceContactNo, vehicleData.insuranceAddress]);
     }
 
+    // Update Fitness details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.fcNumber) {
       await client.query(`
         INSERT INTO fitness_details (vehicle_id, fc_number, fc_tenure_from, fc_tenure_to, fc_contact_no, fc_address)
         VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (vehicle_id) DO UPDATE SET 
+          fc_number = EXCLUDED.fc_number,
+          fc_tenure_from = EXCLUDED.fc_tenure_from,
+          fc_tenure_to = EXCLUDED.fc_tenure_to,
+          fc_contact_no = EXCLUDED.fc_contact_no,
+          fc_address = EXCLUDED.fc_address
       `, [id, vehicleData.fcNumber, vehicleData.fcTenureFrom, vehicleData.fcTenureTo,
           vehicleData.fcContactNo, vehicleData.fcAddress]);
     }
 
+    // Update Permit details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.permitNumber) {
       await client.query(`
         INSERT INTO permit_details (vehicle_id, permit_number, permit_tenure_from, permit_tenure_to, permit_contact_no, permit_address)
         VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (vehicle_id) DO UPDATE SET 
+          permit_number = EXCLUDED.permit_number,
+          permit_tenure_from = EXCLUDED.permit_tenure_from,
+          permit_tenure_to = EXCLUDED.permit_tenure_to,
+          permit_contact_no = EXCLUDED.permit_contact_no,
+          permit_address = EXCLUDED.permit_address
       `, [id, vehicleData.permitNumber, vehicleData.permitTenureFrom, vehicleData.permitTenureTo,
           vehicleData.permitContactNo, vehicleData.permitAddress]);
     }
 
+    // Update Tax details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.taxNumber) {
       await client.query(`
         INSERT INTO tax_details (vehicle_id, tax_number, tax_tenure_from, tax_tenure_to, tax_contact_no, tax_address)
         VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (vehicle_id) DO UPDATE SET 
+          tax_number = EXCLUDED.tax_number,
+          tax_tenure_from = EXCLUDED.tax_tenure_from,
+          tax_tenure_to = EXCLUDED.tax_tenure_to,
+          tax_contact_no = EXCLUDED.tax_contact_no,
+          tax_address = EXCLUDED.tax_address
       `, [id, vehicleData.taxNumber, vehicleData.taxTenureFrom, vehicleData.taxTenureTo,
           vehicleData.taxContactNo, vehicleData.taxAddress]);
     }
@@ -356,93 +381,6 @@ router.put('/:id', authenticateToken, validateRequest(schemas.vehicle), async (r
     });
   } finally {
     client.release();
-  }
-});
-
-// Delete vehicle
-router.delete('/:id', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  
-  try {
-    await client.query('BEGIN');
-
-    const { id } = req.params;
-
-    // Check if vehicle exists
-    const existingVehicle = await client.query('SELECT id FROM vehicles WHERE id = $1', [id]);
-    if (existingVehicle.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Vehicle not found'
-      });
-    }
-
-    // Delete related records first (due to foreign key constraints)
-    await client.query('DELETE FROM puc_details WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM insurance_details WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM fitness_details WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM permit_details WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM tax_details WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM service_orders WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM renewal_dues WHERE vehicle_id = $1', [id]);
-
-    // Delete vehicle
-    await client.query('DELETE FROM vehicles WHERE id = $1', [id]);
-
-    await client.query('COMMIT');
-
-    res.json({
-      success: true,
-      message: 'Vehicle deleted successfully'
-    });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Delete vehicle error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
-  } finally {
-    client.release();
-  }
-});
-
-// Search vehicle by registration number
-router.get('/search/:registrationNumber', authenticateToken, async (req, res) => {
-  try {
-    const { registrationNumber } = req.params;
-
-    const query = `
-      SELECT v.*, 
-             p.puc_number, p.puc_date, p.puc_tenure, p.puc_from, p.puc_to, p.puc_contact_no, p.puc_address,
-             i.company_name as insurance_company_name, i.policy_number, i.insurance_type,
-             i.insurance_date, i.insurance_tenure, i.insurance_from, i.insurance_to, 
-             i.insurance_contact_no, i.insurance_address
-      FROM vehicles v
-      LEFT JOIN puc_details p ON v.id = p.vehicle_id
-      LEFT JOIN insurance_details i ON v.id = i.vehicle_id
-      WHERE v.registration_number ILIKE $1
-    `;
-
-    const result = await pool.query(query, [registrationNumber]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Vehicle not found'
-      });
-    }
-
-    res.json({
-      success: true,
-      data: result.rows[0]
-    });
-  } catch (error) {
-    console.error('Search vehicle error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
   }
 });
 

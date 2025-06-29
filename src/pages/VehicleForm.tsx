@@ -81,6 +81,22 @@ const vehicleTypes = [
   { value: 'Non Transport', label: 'Non Transport' }
 ];
 
+// Helper to convert ISO date string to yyyy-MM-dd for input[type=date]
+function toDateInputValue(dateString: string | undefined): string {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
+  // Adjust for timezone offset so the date is not shifted
+  const tzOffset = date.getTimezoneOffset() * 60000;
+  const localISO = new Date(date.getTime() - tzOffset).toISOString().slice(0, 10);
+  return localISO;
+}
+
+// Add a type for vehicle with index signature
+interface Vehicle {
+  [key: string]: any;
+}
+
 const VehicleForm: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
@@ -92,27 +108,26 @@ const VehicleForm: React.FC = () => {
     () => id ? vehiclesAPI.getById(id) : Promise.resolve(null),
     [id],
     !id // Skip API call if no ID
-  );
+  ) as { data: Vehicle | null, loading: boolean, error: any };
 
   const { mutate: saveVehicle, loading: saving } = useApiMutation();
 
   useEffect(() => {
     if (vehicle && id) {
-      // Map backend field names to frontend form field names
       setForm({
         aadharNumber: vehicle.aadhar_number || "",
         mobileNumber: vehicle.mobile_number || "",
         registeredOwnerName: vehicle.registered_owner_name || "",
         registrationNumber: vehicle.registration_number || "",
         guardianInfo: vehicle.guardian_info || "",
-        dateOfRegistration: vehicle.date_of_registration || "",
+        dateOfRegistration: toDateInputValue(vehicle.date_of_registration),
         address: vehicle.address || "",
-        registrationValidUpto: vehicle.registration_valid_upto || "",
-        taxUpto: vehicle.tax_upto || "",
-        insuranceUpto: vehicle.insurance_upto || "",
-        fcValidUpto: vehicle.fc_valid_upto || "",
+        registrationValidUpto: toDateInputValue(vehicle.registration_valid_upto),
+        taxUpto: toDateInputValue(vehicle.tax_upto),
+        insuranceUpto: toDateInputValue(vehicle.insurance_upto),
+        fcValidUpto: toDateInputValue(vehicle.fc_valid_upto),
         hypothecatedTo: vehicle.hypothecated_to || "",
-        permitUpto: vehicle.permit_upto || "",
+        permitUpto: toDateInputValue(vehicle.permit_upto),
         chassisNumber: vehicle.chassis_number || "",
         bodyType: vehicle.body_type || "",
         engineNumber: vehicle.engine_number || "",
@@ -129,35 +144,35 @@ const VehicleForm: React.FC = () => {
         subject: vehicle.subject || "",
         registeringAuthority: vehicle.registering_authority || "",
         pucNumber: vehicle.puc_number || "",
-        pucDate: vehicle.puc_date || "",
+        pucDate: toDateInputValue(vehicle.puc_date),
         pucTenure: vehicle.puc_tenure || "",
-        pucFrom: vehicle.puc_from || "",
-        pucTo: vehicle.puc_to || "",
+        pucFrom: toDateInputValue(vehicle.puc_from),
+        pucTo: toDateInputValue(vehicle.puc_to),
         pucContactNo: vehicle.puc_contact_no || "",
         pucAddress: vehicle.puc_address || "",
         insuranceCompanyName: vehicle.insurance_company_name || "",
         insuranceType: vehicle.insurance_type || "",
         policyNumber: vehicle.policy_number || "",
-        insuranceDate: vehicle.insurance_date || "",
+        insuranceDate: toDateInputValue(vehicle.insurance_date),
         insuranceTenure: vehicle.insurance_tenure || "",
-        insuranceFrom: vehicle.insurance_from || "",
-        insuranceTo: vehicle.insurance_to || "",
+        insuranceFrom: toDateInputValue(vehicle.insurance_from),
+        insuranceTo: toDateInputValue(vehicle.insurance_to),
         insuranceContactNo: vehicle.insurance_contact_no || "",
         insuranceAddress: vehicle.insurance_address || "",
         type: vehicle.type || "Non Transport",
         fcNumber: vehicle.fc_number || "",
-        fcTenureFrom: vehicle.fc_tenure_from || "",
-        fcTenureTo: vehicle.fc_tenure_to || "",
+        fcTenureFrom: toDateInputValue(vehicle.fc_tenure_from),
+        fcTenureTo: toDateInputValue(vehicle.fc_tenure_to),
         fcContactNo: vehicle.fc_contact_no || "",
         fcAddress: vehicle.fc_address || "",
         permitNumber: vehicle.permit_number || "",
-        permitTenureFrom: vehicle.permit_tenure_from || "",
-        permitTenureTo: vehicle.permit_tenure_to || "",
+        permitTenureFrom: toDateInputValue(vehicle.permit_tenure_from),
+        permitTenureTo: toDateInputValue(vehicle.permit_tenure_to),
         permitContactNo: vehicle.permit_contact_no || "",
         permitAddress: vehicle.permit_address || "",
         taxNumber: vehicle.tax_number || "",
-        taxTenureFrom: vehicle.tax_tenure_from || "",
-        taxTenureTo: vehicle.tax_tenure_to || "",
+        taxTenureFrom: toDateInputValue(vehicle.tax_tenure_from),
+        taxTenureTo: toDateInputValue(vehicle.tax_tenure_to),
         taxContactNo: vehicle.tax_contact_no || "",
         taxAddress: vehicle.tax_address || "",
       });

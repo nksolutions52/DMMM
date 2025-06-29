@@ -197,7 +197,20 @@ const createTables = async () => {
         END IF;
       END $$;
     `);
-
+ // Create service_order_amounts table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS service_order_amounts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        service_order_id UUID REFERENCES service_orders(id) ON DELETE CASCADE,
+        vehicle_id UUID REFERENCES vehicles(id) ON DELETE CASCADE,
+        amount DECIMAL(10,2) NOT NULL,
+        actual_amount DECIMAL(10,2) NOT NULL,
+        discount DECIMAL(10,2) DEFAULT 0,
+        payment_type VARCHAR(50) NOT NULL DEFAULT 'payment' CHECK (payment_type IN ('initial', 'payment')),
+        created_by UUID REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
     // Create indexes for better performance
     await client.query('CREATE INDEX IF NOT EXISTS idx_vehicles_registration_number ON vehicles(registration_number)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_vehicles_type ON vehicles(type)');
@@ -207,6 +220,9 @@ const createTables = async () => {
     await client.query('CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(appointment_date)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_renewal_dues_due_date ON renewal_dues(due_date)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_renewal_dues_type ON renewal_dues(renewal_type)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_service_order_amounts_service_order_id ON service_order_amounts(service_order_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_service_order_amounts_vehicle_id ON service_order_amounts(vehicle_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_service_order_amounts_created_at ON service_order_amounts(created_at)');
 
     await client.query('COMMIT');
     console.log('Database tables created successfully!');

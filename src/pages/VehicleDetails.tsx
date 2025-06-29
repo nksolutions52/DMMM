@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import MainLayout from '../components/layout/MainLayout';
 import Card from '../components/ui/Card';
@@ -7,14 +7,85 @@ import { ArrowLeft, Edit, Trash2 } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
 import { vehiclesAPI } from '../services/api';
 
+// Helper to format ISO date to mm/dd/yyyy
+function formatDate(dateString?: string) {
+  if (!dateString) return '-';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '-';
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  return `${mm}/${dd}/${yyyy}`;
+}
+
+const tabSections = [
+  {
+    key: 'basic',
+    title: 'Basic Information',
+    fields: [
+      { label: 'Registration Number', key: 'registration_number' },
+      { label: 'Owner Name', key: 'registered_owner_name' },
+      { label: 'Mobile Number', key: 'mobile_number' },
+      { label: 'Aadhar Number', key: 'aadhar_number' },
+      { label: 'Guardian Info', key: 'guardian_info' },
+      { label: 'Address', key: 'address' },
+      { label: 'Type', key: 'type' },
+    ]
+  },
+  {
+    key: 'vehicle',
+    title: 'Vehicle Details',
+    fields: [
+      { label: "Maker's Name", key: 'makers_name' },
+      { label: 'Model', key: 'makers_classification' },
+      { label: 'Body Type', key: 'body_type' },
+      { label: 'Color', key: 'colour' },
+      { label: 'Fuel Type', key: 'fuel_used' },
+      { label: 'Seating Capacity', key: 'seating_capacity' },
+      { label: 'Engine Number', key: 'engine_number' },
+      { label: 'Chassis Number', key: 'chassis_number' },
+    ]
+  },
+  {
+    key: 'registration',
+    title: 'Registration Details',
+    fields: [
+      { label: 'Date of Registration', key: 'date_of_registration' },
+      { label: 'Valid Upto', key: 'registration_valid_upto' },
+      { label: 'Tax Valid Upto', key: 'tax_upto' },
+      { label: 'Insurance Valid Upto', key: 'insurance_upto' },
+      { label: 'FC Valid Upto', key: 'fc_valid_upto' },
+      { label: 'Permit Valid Upto', key: 'permit_upto' },
+    ]
+  },
+  {
+    key: 'documents',
+    title: 'Documents & Other Details',
+    fields: [
+      { label: 'PUC Number', key: 'puc_number' },
+      { label: 'PUC Valid From', key: 'puc_from' },
+      { label: 'PUC Valid To', key: 'puc_to' },
+      { label: 'Insurance Policy Number', key: 'policy_number' },
+      { label: 'Insurance Valid From', key: 'insurance_from' },
+      { label: 'Insurance Valid To', key: 'insurance_to' },
+    ]
+  }
+];
+
+// Add a type for vehicle with index signature
+interface Vehicle {
+  [key: string]: any;
+}
+
 const VehicleDetails: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  
-  const { data: vehicle, loading, error } = useApi(
+  const [activeTab, setActiveTab] = useState('basic');
+
+  const { data, loading, error } = useApi(
     () => vehiclesAPI.getById(id!),
     [id]
-  );
+  ) as { data: Vehicle, loading: boolean, error: any };
 
   const { mutate: deleteVehicle } = useApiMutation();
 
@@ -39,7 +110,7 @@ const VehicleDetails: React.FC = () => {
     );
   }
 
-  if (error || !vehicle) {
+  if (error || !data) {
     return (
       <MainLayout>
         <div className="text-center py-12">
@@ -55,56 +126,6 @@ const VehicleDetails: React.FC = () => {
     );
   }
 
-  const detailSections = [
-    {
-      title: 'Basic Information',
-      fields: [
-        { label: 'Registration Number', value: vehicle.registration_number },
-        { label: 'Owner Name', value: vehicle.registered_owner_name },
-        { label: 'Mobile Number', value: vehicle.mobile_number },
-        { label: 'Aadhar Number', value: vehicle.aadhar_number },
-        { label: 'Guardian Info', value: vehicle.guardian_info },
-        { label: 'Address', value: vehicle.address },
-        { label: 'Type', value: vehicle.type },
-      ]
-    },
-    {
-      title: 'Vehicle Details',
-      fields: [
-        { label: 'Maker\'s Name', value: vehicle.makers_name },
-        { label: 'Model', value: vehicle.makers_classification },
-        { label: 'Body Type', value: vehicle.body_type },
-        { label: 'Color', value: vehicle.colour },
-        { label: 'Fuel Type', value: vehicle.fuel_used },
-        { label: 'Seating Capacity', value: vehicle.seating_capacity },
-        { label: 'Engine Number', value: vehicle.engine_number },
-        { label: 'Chassis Number', value: vehicle.chassis_number },
-      ]
-    },
-    {
-      title: 'Registration Details',
-      fields: [
-        { label: 'Date of Registration', value: vehicle.date_of_registration },
-        { label: 'Valid Upto', value: vehicle.registration_valid_upto },
-        { label: 'Tax Valid Upto', value: vehicle.tax_upto },
-        { label: 'Insurance Valid Upto', value: vehicle.insurance_upto },
-        { label: 'FC Valid Upto', value: vehicle.fc_valid_upto },
-        { label: 'Permit Valid Upto', value: vehicle.permit_upto },
-      ]
-    },
-    {
-      title: 'Documents & Other Details',
-      fields: [
-        { label: 'PUC Number', value: vehicle.puc_number },
-        { label: 'PUC Valid From', value: vehicle.puc_from },
-        { label: 'PUC Valid To', value: vehicle.puc_to },
-        { label: 'Insurance Policy Number', value: vehicle.policy_number },
-        { label: 'Insurance Valid From', value: vehicle.insurance_from },
-        { label: 'Insurance Valid To', value: vehicle.insurance_to },
-      ]
-    }
-  ];
-
   return (
     <MainLayout>
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4 mt-3">
@@ -116,14 +137,14 @@ const VehicleDetails: React.FC = () => {
             <ArrowLeft size={20} className="text-gray-600" />
           </button>
           <div className="text-sm text-gray-600">
-            {vehicle.registration_number}
+            {data.registration_number}
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
           <Button
             variant="outline"
             leftIcon={<Edit size={18} />}
-            onClick={() => navigate(`/vehicles/edit/${vehicle.id}`)}
+            onClick={() => navigate(`/vehicles/edit/${data.id}`)}
             className="w-full sm:w-auto"
           >
             Edit
@@ -139,19 +160,51 @@ const VehicleDetails: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {detailSections.map((section) => (
-          <Card key={section.title} title={section.title}>
-            <div className="space-y-4">
-              {section.fields.map((field) => (
-                <div key={field.label} className="border-b border-gray-100 pb-3 last:border-b-0 last:pb-0">
-                  <p className="text-sm text-gray-600 mb-1">{field.label}</p>
-                  <p className="font-medium text-gray-900 break-words">{field.value || '-'}</p>
+      {/* Tabs */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-8">
+        <div className="border-b border-gray-200">
+          <nav className="flex overflow-x-auto">
+            {tabSections.map(tab => (
+              <button
+                key={tab.key}
+                className={`px-4 sm:px-6 py-4 text-sm font-medium border-b-2 whitespace-nowrap ${
+                  activeTab === tab.key
+                    ? 'border-blue-700 text-blue-700'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+                onClick={() => setActiveTab(tab.key)}
+              >
+                {tab.title}
+              </button>
+            ))}
+          </nav>
+        </div>
+        <div className="p-4 sm:p-6">
+          {tabSections.map(tab => (
+            activeTab === tab.key && (
+              <div key={tab.key}>
+                <h3 className="text-lg font-medium text-gray-800 mb-4">{tab.title}</h3>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                  {tab.fields.map(field => {
+                    // List of keys that are dates
+                    const dateFields = [
+                      'date_of_registration', 'registration_valid_upto', 'tax_upto', 'insurance_upto', 'fc_valid_upto', 'permit_upto',
+                      'puc_from', 'puc_to', 'insurance_from', 'insurance_to'
+                    ];
+                    const value = data[field.key];
+                    const displayValue = dateFields.includes(field.key) ? formatDate(value) : (value || '-');
+                    return (
+                      <div key={field.key}>
+                        <span className="block text-xs text-gray-500 mb-1">{field.label}</span>
+                        <span className="font-medium text-gray-900 break-words">{displayValue}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
-          </Card>
-        ))}
+              </div>
+            )
+          ))}
+        </div>
       </div>
     </MainLayout>
   );
