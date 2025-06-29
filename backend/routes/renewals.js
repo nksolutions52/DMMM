@@ -391,131 +391,134 @@ router.post('/auto-check', authenticateToken, async (req, res) => {
   }
 });
 
-// Debug endpoint to check document dates
-router.get('/debug/document-dates', authenticateToken, async (req, res) => {
+// Debug endpoint to check what's happening with the duplicate check
+router.post('/debug-duplicate-check', authenticateToken, async (req, res) => {
   try {
-    console.log('🔍 Debug: Checking document dates...');
+    console.log('🔍 Debug: Checking duplicate logic...');
     
     const currentDate = new Date().toISOString().split('T')[0];
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + 30);
     const futureDateStr = futureDate.toISOString().split('T')[0];
     
-    console.log(`Current date: ${currentDate}`);
-    console.log(`Future date (30 days): ${futureDateStr}`);
+    console.log(`📅 Current date: ${currentDate}`);
+    console.log(`📅 Future date: ${futureDateStr}`);
     
-    // Check PUC documents
-    const pucDocs = await pool.query(`
-      SELECT v.registration_number, p.puc_to, 
-             CASE WHEN p.puc_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status,
-             CASE WHEN p.puc_to < $2 THEN 'Already Expired' 
-                  WHEN p.puc_to <= $1 THEN 'Expiring Soon' 
-                  ELSE 'Valid' END as detailed_status
+    // Check what PUC documents exist and what renewal dues exist
+    const pucDocsQuery = `
+      SELECT v.registration_number, p.puc_to, p.vehicle_id,
+             CASE 
+               WHEN p.puc_to < $1 THEN 'EXPIRED'
+               WHEN p.puc_to >= $1 AND p.puc_to <= $2 THEN 'DUE_SOON' 
+               ELSE 'FUTURE' 
+             END as category
       FROM puc_details p
       JOIN vehicles v ON p.vehicle_id = v.id
       WHERE p.puc_to IS NOT NULL
       ORDER BY p.puc_to ASC
-    `, [futureDateStr, currentDate]);
+    `;
     
-    // Check Insurance documents
-    const insuranceDocs = await pool.query(`
-      SELECT v.registration_number, i.insurance_to,
-             CASE WHEN i.insurance_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status,
-             CASE WHEN i.insurance_to < $2 THEN 'Already Expired' 
-                  WHEN i.insurance_to <= $1 THEN 'Expiring Soon' 
-                  ELSE 'Valid' END as detailed_status
-      FROM insurance_details i
-      JOIN vehicles v ON i.vehicle_id = v.id
-      WHERE i.insurance_to IS NOT NULL
-      ORDER BY i.insurance_to ASC
-    `, [futureDateStr, currentDate]);
+    const pucDocs = await pool.query(pucDocsQuery, [currentDate, futureDateStr]);
+    console.log('📋 PUC Documents found:', pucDocs.rows.length);
     
-    // Check Tax from vehicles table
-    const taxDocs = await pool.query(`
-      SELECT v.registration_number, v.tax_upto,
-             CASE WHEN v.tax_upto <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status,
-             CASE WHEN v.tax_upto < $2 THEN 'Already Expired' 
-                  WHEN v.tax_upto <= $1 THEN 'Expiring Soon' 
-                  ELSE 'Valid' END as detailed_status
-      FROM vehicles v
-      WHERE v.tax_upto IS NOT NULL
-      ORDER BY v.tax_upto ASC
-    `, [futureDateStr, currentDate]);
-    
-    // Check Fitness documents
-    const fitnessDocs = await pool.query(`
-      SELECT v.registration_number, f.fc_tenure_to,
-             CASE WHEN f.fc_tenure_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status,
-             CASE WHEN f.fc_tenure_to < $2 THEN 'Already Expired' 
-                  WHEN f.fc_tenure_to <= $1 THEN 'Expiring Soon' 
-                  ELSE 'Valid' END as detailed_status
-      FROM fitness_details f
-      JOIN vehicles v ON f.vehicle_id = v.id
-      WHERE f.fc_tenure_to IS NOT NULL AND v.type = 'Transport'
-      ORDER BY f.fc_tenure_to ASC
-    `, [futureDateStr, currentDate]);
-    
-    // Check Permit documents
-    const permitDocs = await pool.query(`
-      SELECT v.registration_number, p.permit_tenure_to,
-             CASE WHEN p.permit_tenure_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status,
-             CASE WHEN p.permit_tenure_to < $2 THEN 'Already Expired' 
-                  WHEN p.permit_tenure_to <= $1 THEN 'Expiring Soon' 
-                  ELSE 'Valid' END as detailed_status
-      FROM permit_details p
-      JOIN vehicles v ON p.vehicle_id = v.id
-      WHERE p.permit_tenure_to IS NOT NULL AND v.type = 'Transport'
-      ORDER BY p.permit_tenure_to ASC
-    `, [futureDateStr, currentDate]);
-
-    // Check Tax from tax_details table
-    const taxDetailsDocs = await pool.query(`
-      SELECT v.registration_number, t.tax_tenure_to,
-             CASE WHEN t.tax_tenure_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status,
-             CASE WHEN t.tax_tenure_to < $2 THEN 'Already Expired' 
-                  WHEN t.tax_tenure_to <= $1 THEN 'Expiring Soon' 
-                  ELSE 'Valid' END as detailed_status
-      FROM tax_details t
-      JOIN vehicles v ON t.vehicle_id = v.id
-      WHERE t.tax_tenure_to IS NOT NULL AND v.type = 'Transport'
-      ORDER BY t.tax_tenure_to ASC
-    `, [futureDateStr, currentDate]);
-
-    // Check existing renewal dues
-    const existingDues = await pool.query(`
-      SELECT rd.renewal_type, rd.due_date, v.registration_number, rd.status
+    // Check existing renewal dues for PUC
+    const existingPucDues = await pool.query(`
+      SELECT rd.*, v.registration_number
       FROM renewal_dues rd
       JOIN vehicles v ON rd.vehicle_id = v.id
+      WHERE rd.renewal_type = 'PUC'
       ORDER BY rd.due_date ASC
     `);
+    console.log('📋 Existing PUC renewal dues:', existingPucDues.rows.length);
+    
+    // For each PUC document, check if it would be blocked by the duplicate check
+    const duplicateCheckResults = [];
+    for (const pucDoc of pucDocs.rows) {
+      if (pucDoc.category === 'EXPIRED' || pucDoc.category === 'DUE_SOON') {
+        const duplicateCheckQuery = `
+          SELECT 1 FROM renewal_dues rd 
+          WHERE rd.vehicle_id = $1 
+            AND rd.renewal_type = 'PUC' 
+            AND DATE(rd.due_date) = DATE($2)
+            AND rd.status != 'completed'
+        `;
+        
+        const duplicateCheck = await pool.query(duplicateCheckQuery, [pucDoc.vehicle_id, pucDoc.puc_to]);
+        
+        duplicateCheckResults.push({
+          registration: pucDoc.registration_number,
+          puc_to: pucDoc.puc_to,
+          category: pucDoc.category,
+          vehicle_id: pucDoc.vehicle_id,
+          has_duplicate: duplicateCheck.rows.length > 0,
+          would_be_inserted: duplicateCheck.rows.length === 0
+        });
+      }
+    }
+    
+    console.log('🔍 Duplicate check results:');
+    duplicateCheckResults.forEach(result => {
+      console.log(`   ${result.registration}: ${result.category} - ${result.has_duplicate ? 'BLOCKED (duplicate exists)' : 'WOULD INSERT'}`);
+    });
+    
+    // Test the actual INSERT query to see what happens
+    console.log('\n🧪 Testing actual INSERT query...');
+    const testInsertQuery = `
+      SELECT 
+        p.vehicle_id,
+        'PUC' as renewal_type,
+        p.puc_to as due_date,
+        500 as amount,
+        'pending' as status,
+        v.registration_number,
+        CASE 
+          WHEN p.puc_to < $1 THEN 'EXPIRED'
+          WHEN p.puc_to >= $1 AND p.puc_to <= $2 THEN 'DUE_SOON' 
+          ELSE 'FUTURE' 
+        END as category,
+        CASE WHEN EXISTS (
+          SELECT 1 FROM renewal_dues rd 
+          WHERE rd.vehicle_id = p.vehicle_id 
+            AND rd.renewal_type = 'PUC' 
+            AND DATE(rd.due_date) = DATE(p.puc_to)
+            AND rd.status != 'completed'
+        ) THEN true ELSE false END as has_duplicate
+      FROM puc_details p
+      JOIN vehicles v ON p.vehicle_id = v.id
+      WHERE p.puc_to IS NOT NULL 
+        AND (
+          p.puc_to < $1 OR 
+          (p.puc_to >= $1 AND p.puc_to <= $2)
+        )
+    `;
+    
+    const testResult = await pool.query(testInsertQuery, [currentDate, futureDateStr]);
+    console.log('🧪 Test query results:');
+    testResult.rows.forEach(row => {
+      console.log(`   ${row.registration_number}: ${row.category} - ${row.has_duplicate ? 'BLOCKED' : 'WOULD INSERT'}`);
+    });
+    
+    const wouldInsert = testResult.rows.filter(row => !row.has_duplicate);
+    console.log(`\n📊 Summary: ${wouldInsert.length} out of ${testResult.rows.length} PUC documents would be inserted`);
     
     res.json({
       success: true,
       data: {
         currentDate,
-        checkingUntil: futureDateStr,
-        documents: {
-          puc: pucDocs.rows,
-          insurance: insuranceDocs.rows,
-          tax: taxDocs.rows,
-          fitness: fitnessDocs.rows,
-          permit: permitDocs.rows,
-          taxDetails: taxDetailsDocs.rows
-        },
-        existingRenewalDues: existingDues.rows,
+        futureDateStr,
+        pucDocuments: pucDocs.rows,
+        existingPucDues: existingPucDues.rows,
+        duplicateCheckResults,
+        testQueryResults: testResult.rows,
         summary: {
-          pucDue: pucDocs.rows.filter(d => d.status === 'Due/Expired').length,
-          insuranceDue: insuranceDocs.rows.filter(d => d.status === 'Due/Expired').length,
-          taxDue: taxDocs.rows.filter(d => d.status === 'Due/Expired').length,
-          fitnessDue: fitnessDocs.rows.filter(d => d.status === 'Due/Expired').length,
-          permitDue: permitDocs.rows.filter(d => d.status === 'Due/Expired').length,
-          taxDetailsDue: taxDetailsDocs.rows.filter(d => d.status === 'Due/Expired').length,
-          totalExistingDues: existingDues.rows.length
+          totalPucDocs: pucDocs.rows.length,
+          existingDues: existingPucDues.rows.length,
+          wouldInsert: wouldInsert.length
         }
       }
     });
   } catch (error) {
-    console.error('Debug document dates error:', error);
+    console.error('Debug duplicate check error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
