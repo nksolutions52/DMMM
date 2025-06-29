@@ -7,7 +7,9 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "migrate": "node scripts/migrate.js",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "check-renewals": "node scripts/check-renewal-dues.js",
+    "start-cron": "node scripts/cron-renewal-check.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -19,6 +21,7 @@
     "joi": "^17.11.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.3",
     "pg": "^8.11.3",
     "uuid": "^9.0.1"
   },

@@ -3,7 +3,7 @@ import MainLayout from '../components/layout/MainLayout';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
-import { Search, AlertCircle, Calendar, X } from 'lucide-react';
+import { Search, AlertCircle, Calendar, X, RefreshCw, CheckCircle } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
 import { renewalsAPI } from '../services/api';
 
@@ -26,12 +26,14 @@ const RenewalDues: React.FC = () => {
   );
 
   const { mutate: processRenewal, loading: processing } = useApiMutation();
+  const { mutate: checkDues, loading: checking } = useApiMutation();
 
   const renewals = renewalsData?.renewals || [];
   const pagination = renewalsData?.pagination;
 
   const handleProcessRenewal = (renewal: any) => {
     setSelectedRenewal(renewal);
+    setRenewalAmount(renewal.amount?.toString() || '');
     setShowProcessDialog(true);
   };
 
@@ -48,6 +50,20 @@ const RenewalDues: React.FC = () => {
     } catch (error) {
       console.error('Process renewal failed:', error);
       alert('Failed to process renewal. Please try again.');
+    }
+  };
+
+  const handleCheckDues = async () => {
+    try {
+      const result = await checkDues(() => renewalsAPI.checkDues());
+      if (result.data) {
+        const { puc, insurance, tax, fitness, permit, taxDetails, total } = result.data;
+        alert(`Renewal dues check completed!\n\nNew dues found:\n• PUC: ${puc}\n• Insurance: ${insurance}\n• Tax: ${tax}\n• Fitness: ${fitness}\n• Permit: ${permit}\n• Tax Details: ${taxDetails}\n\nTotal: ${total} new renewal dues added.`);
+        refetch();
+      }
+    } catch (error) {
+      console.error('Check dues failed:', error);
+      alert('Failed to check renewal dues. Please try again.');
     }
   };
 
@@ -124,6 +140,13 @@ const RenewalDues: React.FC = () => {
               All
             </Button>
             <Button
+              variant={selectedType === 'PUC' ? 'primary' : 'outline'}
+              onClick={() => setSelectedType('PUC')}
+              size="sm"
+            >
+              PUC
+            </Button>
+            <Button
               variant={selectedType === 'Insurance' ? 'primary' : 'outline'}
               onClick={() => setSelectedType('Insurance')}
               size="sm"
@@ -150,6 +173,16 @@ const RenewalDues: React.FC = () => {
               size="sm"
             >
               Permit
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleCheckDues}
+              leftIcon={<RefreshCw size={16} />}
+              size="sm"
+              isLoading={checking}
+              className="ml-2"
+            >
+              Check Dues
             </Button>
           </div>
         </div>
@@ -193,6 +226,11 @@ const RenewalDues: React.FC = () => {
                         <p className="text-sm text-gray-500">
                           Due Date: {new Date(due.due_date).toLocaleDateString()}
                         </p>
+                        {due.amount && (
+                          <p className="text-sm text-gray-500">
+                            Amount: ₹{due.amount}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -201,8 +239,10 @@ const RenewalDues: React.FC = () => {
                     variant={due.days_left < 0 ? 'danger' : 'primary'}
                     onClick={() => handleProcessRenewal(due)}
                     className="w-full sm:w-auto flex-shrink-0"
+                    disabled={due.status === 'processing' || due.status === 'completed'}
                   >
-                    Process Renewal
+                    {due.status === 'processing' ? 'Processing...' : 
+                     due.status === 'completed' ? 'Completed' : 'Process Renewal'}
                   </Button>
                 </div>
               </div>
@@ -211,7 +251,17 @@ const RenewalDues: React.FC = () => {
 
           {renewals.length === 0 && (
             <div className="text-center py-8 text-gray-500">
-              No renewal dues found matching your criteria.
+              <CheckCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-800 mb-2">No renewal dues found</h3>
+              <p>No renewal dues found matching your criteria.</p>
+              <Button
+                onClick={handleCheckDues}
+                leftIcon={<RefreshCw size={16} />}
+                className="mt-4"
+                isLoading={checking}
+              >
+                Check for New Dues
+              </Button>
             </div>
           )}
         </div>
@@ -303,6 +353,14 @@ const RenewalDues: React.FC = () => {
                     <div>
                       <span className="text-gray-600 text-sm block">Owner Name:</span>
                       <span className="font-medium break-words">{selectedRenewal.registered_owner_name}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 text-sm block">Mobile Number:</span>
+                      <span className="font-medium">{selectedRenewal.mobile_number}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600 text-sm block">Address:</span>
+                      <span className="font-medium break-words">{selectedRenewal.address}</span>
                     </div>
                     <div>
                       <span className="text-gray-600 text-sm block">Renewal Type:</span>

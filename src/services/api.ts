@@ -104,6 +104,14 @@ export const authAPI = {
     if (response.success && response.data.token) {
       localStorage.setItem('authToken', response.data.token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
+      
+      // Trigger auto renewal dues check on login
+      try {
+        await renewalsAPI.autoCheck();
+      } catch (error) {
+        console.warn('Auto renewal check failed:', error);
+        // Don't fail login if renewal check fails
+      }
     }
     
     return response;
@@ -310,6 +318,20 @@ export const renewalsAPI = {
 
   getStats: async () => {
     return await apiRequest('/renewals/stats/overview');
+  },
+
+  // Manual trigger to check renewal dues
+  checkDues: async () => {
+    return await apiRequest('/renewals/check-dues', {
+      method: 'POST',
+    });
+  },
+
+  // Auto check on login
+  autoCheck: async () => {
+    return await apiRequest('/renewals/auto-check', {
+      method: 'POST',
+    });
   }
 };
 

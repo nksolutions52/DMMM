@@ -1,6 +1,7 @@
 const express = require('express');
 const pool = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
+const checkRenewalDues = require('../scripts/check-renewal-dues');
 
 const router = express.Router();
 
@@ -13,7 +14,7 @@ router.get('/', authenticateToken, async (req, res) => {
     let query = `
       SELECT rd.*, v.registration_number, v.registered_owner_name, v.makers_name, 
              v.makers_classification, v.date_of_registration, v.chassis_number, 
-             v.engine_number, v.fuel_used
+             v.engine_number, v.fuel_used, v.mobile_number, v.address
       FROM renewal_dues rd
       JOIN vehicles v ON rd.vehicle_id = v.id
       WHERE 1=1
@@ -194,15 +195,15 @@ router.post('/:id/process', authenticateToken, async (req, res) => {
     // Create service order
     const serviceOrderQuery = `
       INSERT INTO service_orders (
-        vehicle_id, service_type, amount, amount_paid, customer_name, 
+        vehicle_id, service_type, actual_amount, amount, amount_paid, customer_name, 
         status, agent_id, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
       RETURNING id
     `;
 
     const serviceType = `${renewal.renewal_type} Renewal`;
     const serviceOrderValues = [
-      renewal.vehicle_id, serviceType, amount, 0, 
+      renewal.vehicle_id, serviceType, amount, amount, 0, 
       renewal.registered_owner_name, 'pending', req.user.id
     ];
 
@@ -285,8 +286,10 @@ router.get('/stats/overview', authenticateToken, async (req, res) => {
         COUNT(CASE WHEN renewal_type = 'Insurance' THEN 1 END) as insurance_count,
         COUNT(CASE WHEN renewal_type = 'Tax' THEN 1 END) as tax_count,
         COUNT(CASE WHEN renewal_type = 'FC' THEN 1 END) as fc_count,
-        COUNT(CASE WHEN renewal_type = 'Permit' THEN 1 END) as permit_count
+        COUNT(CASE WHEN renewal_type = 'Permit' THEN 1 END) as permit_count,
+        COUNT(CASE WHEN renewal_type = 'PUC' THEN 1 END) as puc_count
       FROM renewal_dues
+      WHERE status != 'completed'
     `);
 
     res.json({
@@ -298,6 +301,67 @@ router.get('/stats/overview', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Internal server error'
+    });
+  }
+});
+
+// Manual trigger to check renewal dues
+router.post('/check-dues', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔄 Manual renewal dues check triggered by:', req.user.name);
+    const result = await checkRenewalDues();
+    
+    res.json({
+      success: true,
+      message: 'Renewal dues check completed successfully',
+      data: result.data
+    });
+  } catch (error) {
+    console.error('Manual renewal dues check error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check renewal dues',
+      error: error.message
+    });
+  }
+});
+
+// Auto-check renewal dues on login (called by frontend)
+router.post('/auto-check', authenticateToken, async (req, res) => {
+  try {
+    // Check if we've already run this today
+    const lastCheckResult = await pool.query(`
+      SELECT created_at 
+      FROM renewal_dues 
+      WHERE DATE(created_at) = CURRENT_DATE 
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `);
+
+    // If we've already checked today, skip
+    if (lastCheckResult.rows.length > 0) {
+      return res.json({
+        success: true,
+        message: 'Renewal dues already checked today',
+        data: { skipped: true }
+      });
+    }
+
+    console.log('🔄 Auto renewal dues check triggered on login by:', req.user.name);
+    const result = await checkRenewalDues();
+    
+    res.json({
+      success: true,
+      message: 'Auto renewal dues check completed',
+      data: result.data
+    });
+  } catch (error) {
+    console.error('Auto renewal dues check error:', error);
+    // Don't fail login if renewal check fails
+    res.json({
+      success: true,
+      message: 'Renewal dues check failed but login successful',
+      data: { error: error.message }
     });
   }
 });
