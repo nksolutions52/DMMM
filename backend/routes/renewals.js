@@ -407,51 +407,87 @@ router.get('/debug/document-dates', authenticateToken, async (req, res) => {
     // Check PUC documents
     const pucDocs = await pool.query(`
       SELECT v.registration_number, p.puc_to, 
-             CASE WHEN p.puc_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status
+             CASE WHEN p.puc_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status,
+             CASE WHEN p.puc_to < $2 THEN 'Already Expired' 
+                  WHEN p.puc_to <= $1 THEN 'Expiring Soon' 
+                  ELSE 'Valid' END as detailed_status
       FROM puc_details p
       JOIN vehicles v ON p.vehicle_id = v.id
       WHERE p.puc_to IS NOT NULL
       ORDER BY p.puc_to ASC
-    `, [futureDateStr]);
+    `, [futureDateStr, currentDate]);
     
     // Check Insurance documents
     const insuranceDocs = await pool.query(`
       SELECT v.registration_number, i.insurance_to,
-             CASE WHEN i.insurance_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status
+             CASE WHEN i.insurance_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status,
+             CASE WHEN i.insurance_to < $2 THEN 'Already Expired' 
+                  WHEN i.insurance_to <= $1 THEN 'Expiring Soon' 
+                  ELSE 'Valid' END as detailed_status
       FROM insurance_details i
       JOIN vehicles v ON i.vehicle_id = v.id
       WHERE i.insurance_to IS NOT NULL
       ORDER BY i.insurance_to ASC
-    `, [futureDateStr]);
+    `, [futureDateStr, currentDate]);
     
     // Check Tax from vehicles table
     const taxDocs = await pool.query(`
       SELECT v.registration_number, v.tax_upto,
-             CASE WHEN v.tax_upto <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status
+             CASE WHEN v.tax_upto <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status,
+             CASE WHEN v.tax_upto < $2 THEN 'Already Expired' 
+                  WHEN v.tax_upto <= $1 THEN 'Expiring Soon' 
+                  ELSE 'Valid' END as detailed_status
       FROM vehicles v
       WHERE v.tax_upto IS NOT NULL
       ORDER BY v.tax_upto ASC
-    `, [futureDateStr]);
+    `, [futureDateStr, currentDate]);
     
     // Check Fitness documents
     const fitnessDocs = await pool.query(`
       SELECT v.registration_number, f.fc_tenure_to,
-             CASE WHEN f.fc_tenure_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status
+             CASE WHEN f.fc_tenure_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status,
+             CASE WHEN f.fc_tenure_to < $2 THEN 'Already Expired' 
+                  WHEN f.fc_tenure_to <= $1 THEN 'Expiring Soon' 
+                  ELSE 'Valid' END as detailed_status
       FROM fitness_details f
       JOIN vehicles v ON f.vehicle_id = v.id
       WHERE f.fc_tenure_to IS NOT NULL AND v.type = 'Transport'
       ORDER BY f.fc_tenure_to ASC
-    `, [futureDateStr]);
+    `, [futureDateStr, currentDate]);
     
     // Check Permit documents
     const permitDocs = await pool.query(`
       SELECT v.registration_number, p.permit_tenure_to,
-             CASE WHEN p.permit_tenure_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status
+             CASE WHEN p.permit_tenure_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status,
+             CASE WHEN p.permit_tenure_to < $2 THEN 'Already Expired' 
+                  WHEN p.permit_tenure_to <= $1 THEN 'Expiring Soon' 
+                  ELSE 'Valid' END as detailed_status
       FROM permit_details p
       JOIN vehicles v ON p.vehicle_id = v.id
       WHERE p.permit_tenure_to IS NOT NULL AND v.type = 'Transport'
       ORDER BY p.permit_tenure_to ASC
-    `, [futureDateStr]);
+    `, [futureDateStr, currentDate]);
+
+    // Check Tax from tax_details table
+    const taxDetailsDocs = await pool.query(`
+      SELECT v.registration_number, t.tax_tenure_to,
+             CASE WHEN t.tax_tenure_to <= $1 THEN 'Due/Expired' ELSE 'Valid' END as status,
+             CASE WHEN t.tax_tenure_to < $2 THEN 'Already Expired' 
+                  WHEN t.tax_tenure_to <= $1 THEN 'Expiring Soon' 
+                  ELSE 'Valid' END as detailed_status
+      FROM tax_details t
+      JOIN vehicles v ON t.vehicle_id = v.id
+      WHERE t.tax_tenure_to IS NOT NULL AND v.type = 'Transport'
+      ORDER BY t.tax_tenure_to ASC
+    `, [futureDateStr, currentDate]);
+
+    // Check existing renewal dues
+    const existingDues = await pool.query(`
+      SELECT rd.renewal_type, rd.due_date, v.registration_number, rd.status
+      FROM renewal_dues rd
+      JOIN vehicles v ON rd.vehicle_id = v.id
+      ORDER BY rd.due_date ASC
+    `);
     
     res.json({
       success: true,
@@ -463,7 +499,18 @@ router.get('/debug/document-dates', authenticateToken, async (req, res) => {
           insurance: insuranceDocs.rows,
           tax: taxDocs.rows,
           fitness: fitnessDocs.rows,
-          permit: permitDocs.rows
+          permit: permitDocs.rows,
+          taxDetails: taxDetailsDocs.rows
+        },
+        existingRenewalDues: existingDues.rows,
+        summary: {
+          pucDue: pucDocs.rows.filter(d => d.status === 'Due/Expired').length,
+          insuranceDue: insuranceDocs.rows.filter(d => d.status === 'Due/Expired').length,
+          taxDue: taxDocs.rows.filter(d => d.status === 'Due/Expired').length,
+          fitnessDue: fitnessDocs.rows.filter(d => d.status === 'Due/Expired').length,
+          permitDue: permitDocs.rows.filter(d => d.status === 'Due/Expired').length,
+          taxDetailsDue: taxDetailsDocs.rows.filter(d => d.status === 'Due/Expired').length,
+          totalExistingDues: existingDues.rows.length
         }
       }
     });
