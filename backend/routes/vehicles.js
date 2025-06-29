@@ -313,6 +313,7 @@ router.put('/:id', authenticateToken, validateRequest(schemas.vehicle), async (r
     // Check if vehicle exists
     const existingVehicle = await client.query('SELECT id FROM vehicles WHERE id = $1', [id]);
     if (existingVehicle.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({
         success: false,
         message: 'Vehicle not found'
@@ -349,84 +350,55 @@ router.put('/:id', authenticateToken, validateRequest(schemas.vehicle), async (r
 
     await client.query(vehicleQuery, vehicleValues);
 
-    // Update PUC details
+    // Delete existing related records first
+    await client.query('DELETE FROM puc_details WHERE vehicle_id = $1', [id]);
+    await client.query('DELETE FROM insurance_details WHERE vehicle_id = $1', [id]);
+    await client.query('DELETE FROM fitness_details WHERE vehicle_id = $1', [id]);
+    await client.query('DELETE FROM permit_details WHERE vehicle_id = $1', [id]);
+    await client.query('DELETE FROM tax_details WHERE vehicle_id = $1', [id]);
+
+    // Insert PUC details if provided
     if (vehicleData.pucNumber) {
       await client.query(`
         INSERT INTO puc_details (vehicle_id, puc_number, puc_date, puc_tenure, puc_from, puc_to, puc_contact_no, puc_address)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (vehicle_id) DO UPDATE SET 
-          puc_number = EXCLUDED.puc_number,
-          puc_date = EXCLUDED.puc_date,
-          puc_tenure = EXCLUDED.puc_tenure,
-          puc_from = EXCLUDED.puc_from,
-          puc_to = EXCLUDED.puc_to,
-          puc_contact_no = EXCLUDED.puc_contact_no,
-          puc_address = EXCLUDED.puc_address
       `, [id, vehicleData.pucNumber, vehicleData.pucDate, vehicleData.pucTenure,
           vehicleData.pucFrom, vehicleData.pucTo, vehicleData.pucContactNo, vehicleData.pucAddress]);
     }
 
-    // Update Insurance details
+    // Insert Insurance details if provided
     if (vehicleData.insuranceCompanyName) {
       await client.query(`
         INSERT INTO insurance_details (vehicle_id, company_name, policy_number, insurance_type, insurance_date, insurance_tenure, insurance_from, insurance_to, insurance_contact_no, insurance_address)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        ON CONFLICT (vehicle_id) DO UPDATE SET 
-          company_name = EXCLUDED.company_name,
-          policy_number = EXCLUDED.policy_number,
-          insurance_type = EXCLUDED.insurance_type,
-          insurance_date = EXCLUDED.insurance_date,
-          insurance_tenure = EXCLUDED.insurance_tenure,
-          insurance_from = EXCLUDED.insurance_from,
-          insurance_to = EXCLUDED.insurance_to,
-          insurance_contact_no = EXCLUDED.insurance_contact_no,
-          insurance_address = EXCLUDED.insurance_address
       `, [id, vehicleData.insuranceCompanyName, vehicleData.policyNumber, vehicleData.insuranceType,
           vehicleData.insuranceDate, vehicleData.insuranceTenure, vehicleData.insuranceFrom,
           vehicleData.insuranceTo, vehicleData.insuranceContactNo, vehicleData.insuranceAddress]);
     }
 
-    // Update Fitness details if Transport vehicle
+    // Insert Fitness details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.fcNumber) {
       await client.query(`
         INSERT INTO fitness_details (vehicle_id, fc_number, fc_tenure_from, fc_tenure_to, fc_contact_no, fc_address)
         VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (vehicle_id) DO UPDATE SET 
-          fc_number = EXCLUDED.fc_number,
-          fc_tenure_from = EXCLUDED.fc_tenure_from,
-          fc_tenure_to = EXCLUDED.fc_tenure_to,
-          fc_contact_no = EXCLUDED.fc_contact_no,
-          fc_address = EXCLUDED.fc_address
       `, [id, vehicleData.fcNumber, vehicleData.fcTenureFrom, vehicleData.fcTenureTo,
           vehicleData.fcContactNo, vehicleData.fcAddress]);
     }
 
-    // Update Permit details if Transport vehicle
+    // Insert Permit details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.permitNumber) {
       await client.query(`
         INSERT INTO permit_details (vehicle_id, permit_number, permit_tenure_from, permit_tenure_to, permit_contact_no, permit_address)
         VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (vehicle_id) DO UPDATE SET 
-          permit_number = EXCLUDED.permit_number,
-          permit_tenure_from = EXCLUDED.permit_tenure_from,
-          permit_tenure_to = EXCLUDED.permit_tenure_to,
-          permit_contact_no = EXCLUDED.permit_contact_no,
-          permit_address = EXCLUDED.permit_address
       `, [id, vehicleData.permitNumber, vehicleData.permitTenureFrom, vehicleData.permitTenureTo,
           vehicleData.permitContactNo, vehicleData.permitAddress]);
     }
 
-    // Update Tax details if Transport vehicle
+    // Insert Tax details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.taxNumber) {
       await client.query(`
         INSERT INTO tax_details (vehicle_id, tax_number, tax_tenure_from, tax_tenure_to, tax_contact_no, tax_address)
         VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (vehicle_id) DO UPDATE SET 
-          tax_number = EXCLUDED.tax_number,
-          tax_tenure_from = EXCLUDED.tax_tenure_from,
-          tax_tenure_to = EXCLUDED.tax_tenure_to,
-          tax_contact_no = EXCLUDED.tax_contact_no,
-          tax_address = EXCLUDED.tax_address
       `, [id, vehicleData.taxNumber, vehicleData.taxTenureFrom, vehicleData.taxTenureTo,
           vehicleData.taxContactNo, vehicleData.taxAddress]);
     }
