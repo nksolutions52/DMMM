@@ -1,9 +1,17 @@
 const express = require('express');
 const pool = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
-const checkRenewalDues = require('../scripts/check-renewal-dues');
 
 const router = express.Router();
+
+// Import the check renewal dues function
+let checkRenewalDues;
+try {
+  checkRenewalDues = require('../scripts/check-renewal-dues');
+} catch (error) {
+  console.error('Failed to load check-renewal-dues script:', error);
+  checkRenewalDues = null;
+}
 
 // Get all renewal dues
 router.get('/', authenticateToken, async (req, res) => {
@@ -309,6 +317,14 @@ router.get('/stats/overview', authenticateToken, async (req, res) => {
 router.post('/check-dues', authenticateToken, async (req, res) => {
   try {
     console.log('🔄 Manual renewal dues check triggered by:', req.user.name);
+    
+    if (!checkRenewalDues) {
+      return res.status(500).json({
+        success: false,
+        message: 'Renewal dues check function not available'
+      });
+    }
+    
     const result = await checkRenewalDues();
     
     res.json({
@@ -321,7 +337,7 @@ router.post('/check-dues', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to check renewal dues',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 });
@@ -348,6 +364,15 @@ router.post('/auto-check', authenticateToken, async (req, res) => {
     }
 
     console.log('🔄 Auto renewal dues check triggered on login by:', req.user.name);
+    
+    if (!checkRenewalDues) {
+      return res.json({
+        success: true,
+        message: 'Renewal dues check function not available',
+        data: { error: 'Function not available' }
+      });
+    }
+    
     const result = await checkRenewalDues();
     
     res.json({
