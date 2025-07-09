@@ -75,6 +75,7 @@ const initialState = {
   taxTenureTo: "",
   taxContactNo: "",
   taxAddress: "",
+  isHPA: false,
 };
 
 const vehicleTypes = [
@@ -132,7 +133,8 @@ const VehicleForm: React.FC = () => {
 
   useEffect(() => {
     if (vehicle && id) {
-      setForm({
+      setForm(prev => ({
+        ...prev,
         aadharNumber: vehicle.aadhar_number || "",
         mobileNumber: vehicle.mobile_number || "",
         registeredOwnerName: vehicle.registered_owner_name || "",
@@ -141,11 +143,11 @@ const VehicleForm: React.FC = () => {
         dateOfRegistration: toDateInputValue(vehicle.date_of_registration),
         address: vehicle.address || "",
         registrationValidUpto: toDateInputValue(vehicle.registration_valid_upto),
-        taxUpto: toDateInputValue(vehicle.tax_upto),
-        insuranceUpto: toDateInputValue(vehicle.insurance_upto),
-        fcValidUpto: toDateInputValue(vehicle.fc_valid_upto),
-        hypothecatedTo: vehicle.hypothecated_to || "",
-        permitUpto: toDateInputValue(vehicle.permit_upto),
+        taxUpto: toDateInputValue(vehicle.tax_tenure_to),
+        insuranceUpto: toDateInputValue(vehicle.insurance_to),
+        fcValidUpto: toDateInputValue(vehicle.fc_tenure_to),
+        hypothecatedTo: vehicle.hypothicated_to || "",
+        permitUpto: toDateInputValue(vehicle.permit_tenure_to),
         chassisNumber: vehicle.chassis_number || "",
         bodyType: vehicle.body_type || "",
         engineNumber: vehicle.engine_number || "",
@@ -193,7 +195,8 @@ const VehicleForm: React.FC = () => {
         taxTenureTo: toDateInputValue(vehicle.tax_tenure_to),
         taxContactNo: vehicle.tax_contact_no || "",
         taxAddress: vehicle.tax_address || "",
-      });
+        isHPA: !!vehicle.is_hpa,
+      }));
     }
   }, [vehicle, id]);
 
@@ -235,7 +238,11 @@ const VehicleForm: React.FC = () => {
       
       // Add all form fields
       Object.entries(form).forEach(([key, value]) => {
-        formData.append(key, value || '');
+        if (typeof value === 'boolean') {
+          formData.append(key, value ? 'true' : 'false');
+        } else {
+          formData.append(key, value || '');
+        }
       });
 
       // Add vehicle ID for updates
@@ -437,31 +444,45 @@ const VehicleForm: React.FC = () => {
                   value={form.insuranceUpto}
                   onChange={handleChange}
                 />
-                <Input
+                {/* <Input
                   label="FC VALID UPTO"
                   name="fcValidUpto"
                   type="date"
                   fullWidth
                   value={form.fcValidUpto}
                   onChange={handleChange}
-                />
-                <Input
-                  label="HYPOTHECATED TO"
-                  name="hypothecatedTo"
-                  type="text"
-                  placeholder="Bank or financial institution name"
-                  fullWidth
-                  value={form.hypothecatedTo}
-                  onChange={handleChange}
-                />
-                <Input
+                /> */}
+                <div className="flex items-center col-span-2">
+                  <input
+                    type="checkbox"
+                    id="isHPA"
+                    name="isHPA"
+                    checked={form.isHPA}
+                    onChange={e => setForm({ ...form, isHPA: e.target.checked })}
+                    className="mr-2"
+                  />
+                  <label htmlFor="isHPA" className="text-sm font-medium text-gray-700">HPA (Hypothecation)</label>
+                </div>
+                {form.isHPA && (
+                  <Input
+                    label="HYPOTHECATED TO"
+                    name="hypothecatedTo"
+                    type="text"
+                    placeholder="Bank or financial institution name"
+                    fullWidth
+                    value={form.hypothecatedTo}
+                    onChange={handleChange}
+                    required={form.isHPA}
+                  />
+                )}
+                {/* <Input
                   label="PERMIT UPTO"
                   name="permitUpto"
                   type="date"
                   fullWidth
                   value={form.permitUpto}
                   onChange={handleChange}
-                />
+                /> */}
               </div>
             </div>
           )}
@@ -611,7 +632,7 @@ const VehicleForm: React.FC = () => {
                   value={form.gvw}
                   onChange={handleChange}
                 />
-                <Input
+                {/* <Input
                   label="SUBJECT"
                   name="subject"
                   type="text"
@@ -619,7 +640,7 @@ const VehicleForm: React.FC = () => {
                   fullWidth
                   value={form.subject}
                   onChange={handleChange}
-                />
+                /> */}
                 <Input
                   label="REGISTERING AUTHORITY"
                   name="registeringAuthority"
@@ -649,14 +670,14 @@ const VehicleForm: React.FC = () => {
                         value={form.pucNumber}
                         onChange={handleChange}
                       />
-                      <Input
+                      {/* <Input
                         label="PUC DATE"
                         name="pucDate"
                         type="date"
                         fullWidth
                         value={form.pucDate}
                         onChange={handleChange}
-                      />
+                      /> */}
                       <Input
                         label="PUC VALID FROM"
                         name="pucFrom"
@@ -735,14 +756,14 @@ const VehicleForm: React.FC = () => {
                         value={form.policyNumber}
                         onChange={handleChange}
                       />
-                      <Input
+                      {/* <Input
                         label="INSURANCE DATE"
                         name="insuranceDate"
                         type="date"
                         fullWidth
                         value={form.insuranceDate}
                         onChange={handleChange}
-                      />
+                      /> */}
                       <Input
                         label="INSURANCE VALID FROM"
                         name="insuranceFrom"
@@ -915,7 +936,7 @@ const VehicleForm: React.FC = () => {
                 )}
                 
                 {/* Tax */}
-                {form.type === "Transport" && (
+                {(form.type === "Non Transport" || form.type === "Transport") && (
                   <AccordionItem key="tax" title="Tax Details">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
                       <Input
@@ -946,7 +967,7 @@ const VehicleForm: React.FC = () => {
                         />
                       </div>
                       <Input
-                        label="CONTACT NO."
+                        label="TAX CONTACT NO."
                         name="taxContactNo"
                         type="text"
                         placeholder="e.g. 9876543211"
@@ -956,7 +977,7 @@ const VehicleForm: React.FC = () => {
                       />
                       <div className="lg:col-span-2">
                         <Input
-                          label="ADDRESS"
+                          label="TAX ADDRESS"
                           name="taxAddress"
                           type="text"
                           placeholder="Tax office address"

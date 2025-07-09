@@ -53,6 +53,7 @@ const createTables = async () => {
         registering_authority VARCHAR(255),
         type VARCHAR(20) NOT NULL CHECK (type IN ('Transport', 'Non Transport')),
         created_by UUID REFERENCES users(id),
+        updated_by UUID REFERENCES users(id),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -211,6 +212,22 @@ const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+     // Create vehicle_documents table to store file references
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS vehicle_documents (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        vehicle_id UUID REFERENCES vehicles(id) ON DELETE CASCADE,
+        document_type VARCHAR(50) NOT NULL CHECK (document_type IN ('puc', 'insurance', 'fitness', 'permit', 'tax')),
+        file_name VARCHAR(255) NOT NULL,
+        file_path VARCHAR(500) NOT NULL,
+        file_size INTEGER,
+        mime_type VARCHAR(100),
+        original_name VARCHAR(255),
+        uploaded_by UUID REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
     // Create indexes for better performance
     await client.query('CREATE INDEX IF NOT EXISTS idx_vehicles_registration_number ON vehicles(registration_number)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_vehicles_type ON vehicles(type)');
@@ -223,6 +240,9 @@ const createTables = async () => {
     await client.query('CREATE INDEX IF NOT EXISTS idx_service_order_amounts_service_order_id ON service_order_amounts(service_order_id)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_service_order_amounts_vehicle_id ON service_order_amounts(vehicle_id)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_service_order_amounts_created_at ON service_order_amounts(created_at)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_vehicle_documents_vehicle_id ON vehicle_documents(vehicle_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_vehicle_documents_type ON vehicle_documents(document_type)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_vehicle_documents_created_at ON vehicle_documents(created_at)');
 
     await client.query('COMMIT');
     console.log('Database tables created successfully!');

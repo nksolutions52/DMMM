@@ -11,11 +11,12 @@ router.get('/stats', authenticateToken, async (req, res) => {
     const vehiclesResult = await pool.query('SELECT COUNT(*) as count FROM vehicles');
     const totalVehicles = parseInt(vehiclesResult.rows[0].count);
 
-    // Get new registrations (last 30 days)
+    // Get new registrations (current month, by created_at)
     const newRegistrationsResult = await pool.query(`
       SELECT COUNT(*) as count 
       FROM vehicles 
-      WHERE date_of_registration >= CURRENT_DATE - INTERVAL '30 days'
+      WHERE EXTRACT(YEAR FROM created_at) = EXTRACT(YEAR FROM CURRENT_DATE)
+        AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM CURRENT_DATE)
     `);
     const newRegistrations = parseInt(newRegistrationsResult.rows[0].count);
 
@@ -88,19 +89,21 @@ router.get('/stats', authenticateToken, async (req, res) => {
 // Get recent service orders
 router.get('/recent-activity', authenticateToken, async (req, res) => {
   try {
-    const { limit = 10 } = req.query;
-
+    // Always limit to 5
     const query = `
-      SELECT so.*, v.registration_number, v.registered_owner_name,
+      SELECT so.*, v.registration_number, o.registered_owner_name,
              u.name as agent_name
       FROM service_orders so
       JOIN vehicles v ON so.vehicle_id = v.id
+      LEFT JOIN (
+        SELECT * FROM vehicle_owner_details WHERE status = 'ACTIVE'
+      ) o ON v.id = o.vehicle_id
       LEFT JOIN users u ON so.agent_id = u.id
       ORDER BY so.created_at DESC
-      LIMIT $1
+      LIMIT 5
     `;
 
-    const result = await pool.query(query, [limit]);
+    const result = await pool.query(query);
 
     res.json({
       success: true,
@@ -118,28 +121,29 @@ router.get('/recent-activity', authenticateToken, async (req, res) => {
 // Get upcoming renewals
 router.get('/upcoming-renewals', authenticateToken, async (req, res) => {
   try {
-    const { limit = 5 } = req.query;
-
+    // Only future renewals in next 30 days
     const query = `
-      SELECT rd.*, v.registration_number, v.registered_owner_name,
+      SELECT rd.*, v.registration_number, o.registered_owner_name,
              (rd.due_date - CURRENT_DATE) as days_left,
-             CASE 
-               WHEN rd.due_date < CURRENT_DATE THEN 'overdue'
-               ELSE 'upcoming'
-             END as status
+             'upcoming' as status
       FROM renewal_dues rd
       JOIN vehicles v ON rd.vehicle_id = v.id
-      WHERE rd.due_date <= CURRENT_DATE + INTERVAL '30 days'
-      AND rd.status != 'completed'
+      LEFT JOIN vehicle_owner_details o ON v.id = o.vehicle_id
+      WHERE rd.due_date > CURRENT_DATE
+        AND rd.due_date <= CURRENT_DATE + INTERVAL '30 days'
+        AND rd.status != 'completed'
       ORDER BY rd.due_date ASC
-      LIMIT $1
+      LIMIT 5
     `;
 
-    const result = await pool.query(query, [limit]);
+    const result = await pool.query(query);
+
+    // Remove 'amount' from each renewal due in the response
+    const renewals = result.rows.map(({ amount, ...rest }) => rest);
 
     res.json({
       success: true,
-      data: result.rows
+      data: renewals
     });
   } catch (error) {
     console.error('Get upcoming renewals error:', error);

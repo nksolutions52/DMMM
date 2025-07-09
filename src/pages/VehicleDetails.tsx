@@ -7,15 +7,15 @@ import { ArrowLeft, Edit, Trash2, Download, FileText, Image, Eye, X } from 'luci
 import { useApi, useApiMutation } from '../hooks/useApi';
 import { vehiclesAPI } from '../services/api';
 
-// Helper to format ISO date to mm/dd/yyyy
+// Helper to format ISO date to dd-mm-yyyy
 function formatDate(dateString?: string) {
   if (!dateString) return '-';
   const date = new Date(dateString);
   if (isNaN(date.getTime())) return '-';
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
   const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
   const yyyy = date.getFullYear();
-  return `${mm}/${dd}/${yyyy}`;
+  return `${dd}-${mm}-${yyyy}`;
 }
 
 const tabSections = [
@@ -30,6 +30,8 @@ const tabSections = [
       { label: 'Guardian Info', key: 'guardian_info' },
       { label: 'Address', key: 'address' },
       { label: 'Type', key: 'type' },
+      { label: 'Hypothecation', key: 'is_hpa', render: (val: boolean) => val ? 'Yes' : 'No' },
+      { label: 'Hypothecated To', key: 'hypothicated_to' },
     ]
   },
   {
@@ -52,10 +54,10 @@ const tabSections = [
     fields: [
       { label: 'Date of Registration', key: 'date_of_registration' },
       { label: 'Valid Upto', key: 'registration_valid_upto' },
-      { label: 'Tax Valid Upto', key: 'tax_upto' },
-      { label: 'Insurance Valid Upto', key: 'insurance_upto' },
-      { label: 'FC Valid Upto', key: 'fc_valid_upto' },
-      { label: 'Permit Valid Upto', key: 'permit_upto' },
+      { label: 'Tax Valid Upto', key: 'tax_tenure_to' },
+      { label: 'Insurance Valid Upto', key: 'insurance_to' },
+      { label: 'FC Valid Upto', key: 'fc_tenure_to' },
+      { label: 'Permit Valid Upto', key: 'permit_tenure_to' },
     ]
   },
   {
@@ -63,11 +65,20 @@ const tabSections = [
     title: 'Documents',
     fields: [
       { label: 'PUC Number', key: 'puc_number' },
-      { label: 'PUC Valid From', key: 'puc_from' },
-      { label: 'PUC Valid To', key: 'puc_to' },
+      { label: 'PUC From', key: 'puc_from' },
+      { label: 'PUC To', key: 'puc_to' },
       { label: 'Insurance Policy Number', key: 'policy_number' },
-      { label: 'Insurance Valid From', key: 'insurance_from' },
-      { label: 'Insurance Valid To', key: 'insurance_to' },
+      { label: 'Insurance From', key: 'insurance_from' },
+      { label: 'Insurance To', key: 'insurance_to' },
+      { label: 'FC Number', key: 'fc_number' },
+      { label: 'FC From', key: 'fc_tenure_from' },
+      { label: 'FC To', key: 'fc_tenure_to' },
+      { label: 'Permit Number', key: 'permit_number' },
+      { label: 'Permit From', key: 'permit_tenure_from' },
+      { label: 'Permit To', key: 'permit_tenure_to' },
+      { label: 'Tax Number', key: 'tax_number' },
+      { label: 'Tax From', key: 'tax_tenure_from' },
+      { label: 'Tax To', key: 'tax_tenure_to' },
     ]
   }
 ];
@@ -221,6 +232,15 @@ const VehicleDetails: React.FC = () => {
     }
   };
 
+  // Place this near the top of the component, before the return statement, so it's in scope for all usages
+  const dateFields = [
+    'date_of_registration', 'registration_valid_upto', 'tax_upto', 'insurance_upto', 'fc_valid_upto', 'permit_upto',
+    'puc_from', 'puc_to', 'insurance_from', 'insurance_to',
+    'fc_tenure_from', 'fc_tenure_to',
+    'permit_tenure_from', 'permit_tenure_to',
+    'tax_tenure_from', 'tax_tenure_to'
+  ];
+
   if (loading) {
     return (
       <MainLayout>
@@ -308,24 +328,70 @@ const VehicleDetails: React.FC = () => {
                 
                 {tab.key === 'documents' ? (
                   <div>
-                    {/* Document Details */}
+                    {/* Grouped Document Details */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-8">
-                      {tab.fields.map(field => {
-                        const dateFields = [
-                          'date_of_registration', 'registration_valid_upto', 'tax_upto', 'insurance_upto', 'fc_valid_upto', 'permit_upto',
-                          'puc_from', 'puc_to', 'insurance_from', 'insurance_to'
-                        ];
-                        const value = data[field.key];
-                        const displayValue = dateFields.includes(field.key) ? formatDate(value) : (value || '-');
-                        return (
-                          <div key={field.key}>
-                            <span className="block text-xs text-gray-500 mb-1">{field.label}</span>
-                            <span className="font-medium text-gray-900 break-words">{displayValue}</span>
+                      {/* PUC Section (Always show) */}
+                      <Card className="mb-4">
+                        <h4 className="font-semibold text-gray-700 mb-2">PUC Details</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div><span className="block text-xs text-gray-500 mb-1">PUC Number</span><span className="font-medium text-gray-900 break-words">{data.puc_number || '-'}</span></div>
+                          <div><span className="block text-xs text-gray-500 mb-1">From</span><span className="font-medium text-gray-900 break-words">{formatDate(data.puc_from)}</span></div>
+                          <div><span className="block text-xs text-gray-500 mb-1">To</span><span className="font-medium text-gray-900 break-words">{formatDate(data.puc_to)}</span></div>
+                          <div><span className="block text-xs text-gray-500 mb-1">Contact No</span><span className="font-medium text-gray-900 break-words">{data.puc_contact_no || '-'}</span></div>
+                          <div className="md:col-span-2"><span className="block text-xs text-gray-500 mb-1">Address</span><span className="font-medium text-gray-900 break-words">{data.puc_address || '-'}</span></div>
+                        </div>
+                      </Card>
+                      {/* Insurance Section (Always show) */}
+                      <Card className="mb-4">
+                        <h4 className="font-semibold text-blue-700 mb-2">Insurance Details</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div><span className="block text-xs text-gray-500 mb-1">Company Name</span><span className="font-medium text-gray-900 break-words">{data.insurance_company_name || '-'}</span></div>
+                          <div><span className="block text-xs text-gray-500 mb-1">Policy Number</span><span className="font-medium text-gray-900 break-words">{data.policy_number || '-'}</span></div>
+                          <div><span className="block text-xs text-gray-500 mb-1">Type</span><span className="font-medium text-gray-900 break-words">{data.insurance_type || '-'}</span></div>
+                          <div><span className="block text-xs text-gray-500 mb-1">From</span><span className="font-medium text-gray-900 break-words">{formatDate(data.insurance_from)}</span></div>
+                          <div><span className="block text-xs text-gray-500 mb-1">To</span><span className="font-medium text-gray-900 break-words">{formatDate(data.insurance_to)}</span></div>
+                          <div><span className="block text-xs text-gray-500 mb-1">Contact No</span><span className="font-medium text-gray-900 break-words">{data.insurance_contact_no || '-'}</span></div>
+                          <div className="md:col-span-2"><span className="block text-xs text-gray-500 mb-1">Address</span><span className="font-medium text-gray-900 break-words">{data.insurance_address || '-'}</span></div>
+                        </div>
+                      </Card>
+                      {/* Tax Section (Always show) */}
+                      <Card className="mb-4">
+                        <h4 className="font-semibold text-yellow-700 mb-2">Tax Details</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div><span className="block text-xs text-gray-500 mb-1">Tax Number</span><span className="font-medium text-gray-900 break-words">{data.tax_number || '-'}</span></div>
+                          <div><span className="block text-xs text-gray-500 mb-1">From</span><span className="font-medium text-gray-900 break-words">{formatDate(data.tax_tenure_from)}</span></div>
+                          <div><span className="block text-xs text-gray-500 mb-1">To</span><span className="font-medium text-gray-900 break-words">{formatDate(data.tax_tenure_to)}</span></div>
+                          <div><span className="block text-xs text-gray-500 mb-1">Contact No</span><span className="font-medium text-gray-900 break-words">{data.tax_contact_no || '-'}</span></div>
+                          <div className="md:col-span-2"><span className="block text-xs text-gray-500 mb-1">Address</span><span className="font-medium text-gray-900 break-words">{data.tax_address || '-'}</span></div>
+                        </div>
+                      </Card>
+                      {/* Fitness Section (Transport only) */}
+                      {data.type === 'TRANSPORT' && (
+                        <Card className="mb-4">
+                          <h4 className="font-semibold text-green-700 mb-2">Fitness (FC) Details</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div><span className="block text-xs text-gray-500 mb-1">FC Number</span><span className="font-medium text-gray-900 break-words">{data.fc_number || '-'}</span></div>
+                            <div><span className="block text-xs text-gray-500 mb-1">From</span><span className="font-medium text-gray-900 break-words">{formatDate(data.fc_tenure_from)}</span></div>
+                            <div><span className="block text-xs text-gray-500 mb-1">To</span><span className="font-medium text-gray-900 break-words">{formatDate(data.fc_tenure_to)}</span></div>
+                            <div><span className="block text-xs text-gray-500 mb-1">Contact No</span><span className="font-medium text-gray-900 break-words">{data.fc_contact_no || '-'}</span></div>
+                            <div className="md:col-span-2"><span className="block text-xs text-gray-500 mb-1">Address</span><span className="font-medium text-gray-900 break-words">{data.fc_address || '-'}</span></div>
                           </div>
-                        );
-                      })}
+                        </Card>
+                      )}
+                      {/* Permit Section (Transport only) */}
+                      {data.type === 'TRANSPORT' && (
+                        <Card className="mb-4">
+                          <h4 className="font-semibold text-purple-700 mb-2">Permit Details</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div><span className="block text-xs text-gray-500 mb-1">Permit Number</span><span className="font-medium text-gray-900 break-words">{data.permit_number || '-'}</span></div>
+                            <div><span className="block text-xs text-gray-500 mb-1">From</span><span className="font-medium text-gray-900 break-words">{formatDate(data.permit_tenure_from)}</span></div>
+                            <div><span className="block text-xs text-gray-500 mb-1">To</span><span className="font-medium text-gray-900 break-words">{formatDate(data.permit_tenure_to)}</span></div>
+                            <div><span className="block text-xs text-gray-500 mb-1">Contact No</span><span className="font-medium text-gray-900 break-words">{data.permit_contact_no || '-'}</span></div>
+                            <div className="md:col-span-2"><span className="block text-xs text-gray-500 mb-1">Address</span><span className="font-medium text-gray-900 break-words">{data.permit_address || '-'}</span></div>
+                          </div>
+                        </Card>
+                      )}
                     </div>
-
                     {/* Document Files */}
                     {data.documents && Object.keys(data.documents).length > 0 && (
                       <div>
@@ -348,7 +414,7 @@ const VehicleDetails: React.FC = () => {
                                       </div>
                                     </div>
                                     <div className="text-xs text-gray-500 mb-3">
-                                      {formatFileSize(file.file_size)} • {new Date(file.created_at).toLocaleDateString()}
+                                      {formatFileSize(file.file_size)} • {formatDate(file.created_at)}
                                     </div>
                                     <div className="flex items-center space-x-2">
                                       {isImageFile(file.mime_type) && (
@@ -390,7 +456,6 @@ const VehicleDetails: React.FC = () => {
                         </div>
                       </div>
                     )}
-
                     {(!data.documents || Object.keys(data.documents).length === 0) && (
                       <div className="text-center py-8 text-gray-500">
                         <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -401,12 +466,8 @@ const VehicleDetails: React.FC = () => {
                 ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                     {tab.fields.map(field => {
-                      const dateFields = [
-                        'date_of_registration', 'registration_valid_upto', 'tax_upto', 'insurance_upto', 'fc_valid_upto', 'permit_upto',
-                        'puc_from', 'puc_to', 'insurance_from', 'insurance_to'
-                      ];
                       const value = data[field.key];
-                      const displayValue = dateFields.includes(field.key) ? formatDate(value) : (value || '-');
+                      const displayValue = field.render ? field.render(value) : (dateFields.includes(field.key) ? formatDate(value) : (value || '-'));
                       return (
                         <div key={field.key}>
                           <span className="block text-xs text-gray-500 mb-1">{field.label}</span>

@@ -92,9 +92,9 @@ export interface DashboardStat {
 export interface ServiceOrder {
   id: string;
   vehicleNumber: string;
-  serviceType: string;
+  serviceType: 'TRANSFER' | 'PERMIT' | 'HPA' | 'HPT' | 'FITNESS' | 'POLLUTION' | 'INSURANCE';
   amount: number;
-  status: 'pending' | 'completed' | 'cancelled';
+  status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
   createdAt: string;
   customerName: string;
   agentName?: string;
@@ -105,9 +105,9 @@ export interface RenewalDue {
   id: string;
   vehicleNumber: string;
   ownerName: string;
-  renewalType: 'Insurance' | 'Tax' | 'FC' | 'Permit';
+  renewalType: 'INSURANCE' | 'TAX' | 'FC' | 'PERMIT' | 'PUC';
   dueDate: string;
-  status: 'upcoming' | 'overdue';
+  status: 'UPCOMING' | 'OVERDUE';
   daysLeft: number;
   amount: number;
   vehicleDetails?: {

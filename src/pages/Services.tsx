@@ -12,24 +12,23 @@ const stepTitles = ['Select Service', 'Vehicle Details', 'Payment'];
 const Services: React.FC = () => {
   const [step, setStep] = useState(1);
   const [selectedService, setSelectedService] = useState('');
-  const [selectedServiceFee, setSelectedServiceFee] = useState<number | null>(null);
+  const [actualAmount, setActualAmount] = useState<string>("");
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [vehicleData, setVehicleData] = useState<any>(null);
   const [discount, setDiscount] = useState<number>(0);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  const { data: services, loading: servicesLoading } = useApi(
+  const { data: servicesRaw, loading: servicesLoading } = useApi(
     () => servicesAPI.getTypes(),
     []
   );
+  const services = Array.isArray(servicesRaw) ? servicesRaw : [];
 
   const { mutate: createOrder, loading: orderLoading } = useApiMutation();
 
   const handleServiceSelect = (serviceId: string) => {
     setSelectedService(serviceId);
-    const service = services?.find((s: any) => s.id === serviceId);
-    setSelectedServiceFee(service ? service.fee : null);
     setStep(2);
   };
 
@@ -49,15 +48,15 @@ const Services: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    if (!vehicleData || !selectedService || selectedServiceFee === null) return;
+    if (!vehicleData || !selectedService || !actualAmount || isNaN(Number(actualAmount)) || Number(actualAmount) <= 0) return;
 
     try {
       const orderData = {
         vehicleId: vehicleData.id,
-        serviceType: selectedService, // send the service id, e.g., 'pollution'
-        actualAmount: selectedServiceFee, // send actualAmount (fee before discount)
+        serviceType: selectedService,
+        actualAmount: Number(actualAmount),
         discount,
-        customerName: vehicleData.registered_owner_name
+        customerName: vehicleData.registered_owner_name || vehicleData.owner_name || '-'
       };
 
       await createOrder(() => servicesAPI.createOrder(orderData));
@@ -66,14 +65,19 @@ const Services: React.FC = () => {
       // Reset form
       setStep(1);
       setSelectedService('');
-      setSelectedServiceFee(null);
+      setActualAmount("");
       setVehicleNumber('');
       setVehicleData(null);
       setDiscount(0);
       setHasSearched(false);
-    } catch (error) {
+    } catch (error: any) {
+      // Try to show backend error message if available
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to create service order. Please try again.';
+      alert(message);
       console.error('Order creation failed:', error);
-      alert('Failed to create service order. Please try again.');
     }
   };
 
@@ -123,7 +127,7 @@ const Services: React.FC = () => {
           <div>
             <h3 className="text-xl font-semibold mb-6 text-gray-800">Select Service</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-10">
-              {services?.map((service: any) => (
+              {services.map((service: any) => (
                 <button
                   key={service.id}
                   onClick={() => handleServiceSelect(service.id)}
@@ -134,7 +138,6 @@ const Services: React.FC = () => {
                   `}
                 >
                   <div className="text-base sm:text-lg font-bold mb-2">{service.name}</div>
-                  <div className="text-xl sm:text-2xl font-extrabold">₹{service.fee}</div>
                 </button>
               ))}
             </div>
@@ -279,19 +282,18 @@ const Services: React.FC = () => {
                   <Input
                     type="text"
                     readOnly
-                    value={services?.find((s: any) => s.id === selectedService)?.name || 'N/A'}
+                    value={services.find((s: any) => s.id === selectedService)?.name || 'N/A'}
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-600 mb-1">Actual Service Amount</label>
+                  <label className="block text-gray-600 mb-1">Actual Service Amount <span className="text-red-500">*</span></label>
                   <Input
-                    type="text"
-                    readOnly
-                    value={
-                      selectedServiceFee !== null
-                        ? `₹${selectedServiceFee}`
-                        : 'N/A'
-                    }
+                    type="number"
+                    min={1}
+                    value={actualAmount}
+                    onChange={e => setActualAmount(e.target.value)}
+                    placeholder="Enter actual service amount"
+                    required
                   />
                 </div>
                 <div>
@@ -310,9 +312,9 @@ const Services: React.FC = () => {
                     type="text"
                     readOnly
                     value={
-                      selectedServiceFee !== null
-                        ? `₹${Math.max(selectedServiceFee - discount, 0)}`
-                        : 'N/A'
+                      actualAmount && !isNaN(Number(actualAmount))
+                        ? `₹${Math.max(Number(actualAmount) - discount, 0)}`
+                        : '₹0'
                     }
                   />
                 </div>
@@ -323,6 +325,7 @@ const Services: React.FC = () => {
                   onClick={handleSubmit} 
                   className="w-full sm:w-auto"
                   isLoading={orderLoading}
+                  disabled={!actualAmount || isNaN(Number(actualAmount)) || Number(actualAmount) <= 0}
                 >
                   Submit
                 </Button>

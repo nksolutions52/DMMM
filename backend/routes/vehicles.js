@@ -14,13 +14,22 @@ router.get('/', authenticateToken, async (req, res) => {
     const offset = (page - 1) * limit;
 
     let query = `
-      SELECT v.*, 
+      SELECT v.*, o.registered_owner_name,
              p.puc_number, p.puc_from, p.puc_to, puc_contact_no, p.puc_address,
              i.company_name as insurance_company_name, i.policy_number, i.insurance_type,
-             i.insurance_from, i.insurance_to, i.insurance_contact_no, i.insurance_address
+             i.insurance_from, i.insurance_to, i.insurance_contact_no, i.insurance_address,
+             UPPER(v.type) as type
       FROM vehicles v
-      LEFT JOIN puc_details p ON v.id = p.vehicle_id
-      LEFT JOIN insurance_details i ON v.id = i.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM vehicle_owner_details WHERE status = 'ACTIVE'
+      ) o ON v.id = o.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM puc_details WHERE status = 'ACTIVE'
+      ) p ON v.id = p.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM insurance_details WHERE status = 'ACTIVE'
+      ) i ON v.id = i.vehicle_id
+      -- add similar LEFT JOINs for other detail tables if needed
       WHERE 1=1
     `;
     
@@ -29,7 +38,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
     if (search) {
       paramCount++;
-      query += ` AND (v.registration_number ILIKE $${paramCount} OR v.registered_owner_name ILIKE $${paramCount} OR v.chassis_number ILIKE $${paramCount})`;
+      query += ` AND (v.registration_number ILIKE $${paramCount} OR o.registered_owner_name ILIKE $${paramCount} OR v.chassis_number ILIKE $${paramCount})`;
       queryParams.push(`%${search}%`);
     }
 
@@ -45,13 +54,13 @@ router.get('/', authenticateToken, async (req, res) => {
     const result = await pool.query(query, queryParams);
 
     // Get total count for pagination
-    let countQuery = 'SELECT COUNT(*) FROM vehicles v WHERE 1=1';
+    let countQuery = 'SELECT COUNT(*) FROM vehicles v LEFT JOIN vehicle_owner_details o ON v.id = o.vehicle_id WHERE 1=1';
     const countParams = [];
     let countParamCount = 0;
 
     if (search) {
       countParamCount++;
-      countQuery += ` AND (v.registration_number ILIKE $${countParamCount} OR v.registered_owner_name ILIKE $${countParamCount} OR v.chassis_number ILIKE $${countParamCount})`;
+      countQuery += ` AND (v.registration_number ILIKE $${countParamCount} OR o.registered_owner_name ILIKE $${countParamCount} OR v.chassis_number ILIKE $${countParamCount})`;
       countParams.push(`%${search}%`);
     }
 
@@ -92,20 +101,37 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     const query = `
-      SELECT v.*, 
-             p.puc_number, p.puc_date, puc_tenure, p.puc_from, p.puc_to, p.puc_contact_no, p.puc_address,
+      SELECT v.*, o.aadhar_number, o.mobile_number, o.registered_owner_name, o.guardian_info, o.address,
+             p.puc_number, p.puc_date, p.puc_tenure, p.puc_from, p.puc_to, p.puc_contact_no, p.puc_address,
              i.company_name as insurance_company_name, i.policy_number, i.insurance_type,
              i.insurance_date, i.insurance_tenure, i.insurance_from, i.insurance_to, 
              i.insurance_contact_no, i.insurance_address,
              f.fc_number, f.fc_tenure_from, f.fc_tenure_to, f.fc_contact_no, f.fc_address,
              pr.permit_number, pr.permit_tenure_from, pr.permit_tenure_to, pr.permit_contact_no, pr.permit_address,
-             t.tax_number, t.tax_tenure_from, t.tax_tenure_to, t.tax_contact_no, t.tax_address
+             t.tax_number, t.tax_tenure_from, t.tax_tenure_to, t.tax_contact_no, t.tax_address,
+             h.is_hpa, h.hypothicated_to
       FROM vehicles v
-      LEFT JOIN puc_details p ON v.id = p.vehicle_id
-      LEFT JOIN insurance_details i ON v.id = i.vehicle_id
-      LEFT JOIN fitness_details f ON v.id = f.vehicle_id
-      LEFT JOIN permit_details pr ON v.id = pr.vehicle_id
-      LEFT JOIN tax_details t ON v.id = t.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM vehicle_owner_details WHERE status = 'ACTIVE'
+      ) o ON v.id = o.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM puc_details WHERE status = 'ACTIVE'
+      ) p ON v.id = p.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM insurance_details WHERE status = 'ACTIVE'
+      ) i ON v.id = i.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM fitness_details WHERE status = 'ACTIVE'
+      ) f ON v.id = f.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM permit_details WHERE status = 'ACTIVE'
+      ) pr ON v.id = pr.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM tax_details WHERE status = 'ACTIVE'
+      ) t ON v.id = t.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM hypothication_details WHERE status = 'ACTIVE'
+      ) h ON v.id = h.vehicle_id
       WHERE v.id = $1
     `;
 
@@ -162,7 +188,7 @@ router.get('/search/:registrationNumber', authenticateToken, async (req, res) =>
 
     const query = `
       SELECT v.*, 
-             p.puc_number, p.puc_date, puc_tenure, p.puc_from, p.puc_to, p.puc_contact_no, p.puc_address,
+             p.puc_number, p.puc_date, p.puc_tenure, p.puc_from, p.puc_to, p.puc_contact_no, p.puc_address,
              i.company_name as insurance_company_name, i.policy_number, i.insurance_type,
              i.insurance_date, i.insurance_tenure, i.insurance_from, i.insurance_to, 
              i.insurance_contact_no, i.insurance_address,
@@ -170,11 +196,21 @@ router.get('/search/:registrationNumber', authenticateToken, async (req, res) =>
              pr.permit_number, pr.permit_tenure_from, pr.permit_tenure_to, pr.permit_contact_no, pr.permit_address,
              t.tax_number, t.tax_tenure_from, t.tax_tenure_to, t.tax_contact_no, t.tax_address
       FROM vehicles v
-      LEFT JOIN puc_details p ON v.id = p.vehicle_id
-      LEFT JOIN insurance_details i ON v.id = i.vehicle_id
-      LEFT JOIN fitness_details f ON v.id = f.vehicle_id
-      LEFT JOIN permit_details pr ON v.id = pr.vehicle_id
-      LEFT JOIN tax_details t ON v.id = t.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM puc_details WHERE status = 'ACTIVE'
+      ) p ON v.id = p.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM insurance_details WHERE status = 'ACTIVE'
+      ) i ON v.id = i.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM fitness_details WHERE status = 'ACTIVE'
+      ) f ON v.id = f.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM permit_details WHERE status = 'ACTIVE'
+      ) pr ON v.id = pr.vehicle_id
+      LEFT JOIN (
+        SELECT * FROM tax_details WHERE status = 'ACTIVE'
+      ) t ON v.id = t.vehicle_id
       WHERE v.registration_number ILIKE $1
     `;
 
@@ -230,49 +266,51 @@ const saveDocumentFiles = async (client, vehicleId, files, userId) => {
 // Create new vehicle with documents
 router.post('/', authenticateToken, uploadDocuments, async (req, res) => {
   const client = await pool.connect();
-  
   try {
     await client.query('BEGIN');
-
     const vehicleData = req.body;
-    
     // Convert empty strings to null for optional fields
     Object.keys(vehicleData).forEach(key => {
       if (vehicleData[key] === '') vehicleData[key] = null;
     });
-    
-    // Insert vehicle
+
+    // Insert vehicle (add registration_valid_upto)
     const vehicleQuery = `
       INSERT INTO vehicles (
-        aadhar_number, mobile_number, registered_owner_name, registration_number,
-        guardian_info, date_of_registration, address, registration_valid_upto,
-        tax_upto, insurance_upto, fc_valid_upto, hypothecated_to, permit_upto,
-        chassis_number, body_type, engine_number, colour, vehicle_class,
-        fuel_used, makers_name, cubic_capacity, makers_classification,
-        seating_capacity, month_year_of_manufacture, ulw, gvw, subject,
-        registering_authority, type, created_by
+        registration_number, date_of_registration, registration_valid_upto, subject, registering_authority, type, chassis_number, body_type, engine_number, colour, vehicle_class, fuel_used, makers_name, cubic_capacity, makers_classification, seating_capacity, month_year_of_manufacture, ulw, gvw, created_by, status
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-        $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 'ACTIVE'
       ) RETURNING id
     `;
-
     const vehicleValues = [
-      vehicleData.aadharNumber, vehicleData.mobileNumber, vehicleData.registeredOwnerName,
-      vehicleData.registrationNumber, vehicleData.guardianInfo, vehicleData.dateOfRegistration,
-      vehicleData.address, vehicleData.registrationValidUpto, vehicleData.taxUpto,
-      vehicleData.insuranceUpto, vehicleData.fcValidUpto, vehicleData.hypothecatedTo,
-      vehicleData.permitUpto, vehicleData.chassisNumber, vehicleData.bodyType,
-      vehicleData.engineNumber, vehicleData.colour, vehicleData.vehicleClass,
-      vehicleData.fuelUsed, vehicleData.makersName, vehicleData.cubicCapacity,
-      vehicleData.makersClassification, vehicleData.seatingCapacity,
-      vehicleData.monthYearOfManufacture, vehicleData.ulw, vehicleData.gvw,
-      vehicleData.subject, vehicleData.registeringAuthority, vehicleData.type,
-      req.user.id
+      vehicleData.registrationNumber, vehicleData.dateOfRegistration, vehicleData.registrationValidUpto, vehicleData.subject, vehicleData.registeringAuthority, vehicleData.type, vehicleData.chassisNumber, vehicleData.bodyType, vehicleData.engineNumber, vehicleData.colour, vehicleData.vehicleClass, vehicleData.fuelUsed, vehicleData.makersName, vehicleData.cubicCapacity, vehicleData.makersClassification, vehicleData.seatingCapacity, vehicleData.monthYearOfManufacture, vehicleData.ulw, vehicleData.gvw, req.user.id
     ];
-
     const vehicleResult = await client.query(vehicleQuery, vehicleValues);
     const vehicleId = vehicleResult.rows[0].id;
+
+    // Insert owner details
+    const ownerQuery = `
+      INSERT INTO vehicle_owner_details (
+        vehicle_id, aadhar_number, mobile_number, registered_owner_name, guardian_info, address, status, created_by, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', $7, NOW())
+    `;
+    await client.query(ownerQuery, [
+      vehicleId,
+      vehicleData.aadharNumber,
+      vehicleData.mobileNumber,
+      vehicleData.registeredOwnerName,
+      vehicleData.guardianInfo,
+      vehicleData.address,
+      req.user.id
+    ]);
+
+    // Insert Hypothecation details if provided
+    if (vehicleData.isHPA || vehicleData.hypothecatedTo) {
+      await client.query(`
+        INSERT INTO hypothication_details (vehicle_id, is_hpa, hypothicated_to, status, created_by, created_at)
+        VALUES ($1, $2, $3, 'ACTIVE', $4, NOW())
+      `, [vehicleId, !!vehicleData.isHPA, vehicleData.hypothecatedTo || null, req.user.id]);
+    }
 
     // Save uploaded documents
     await saveDocumentFiles(client, vehicleId, req.files, req.user.id);
@@ -280,47 +318,47 @@ router.post('/', authenticateToken, uploadDocuments, async (req, res) => {
     // Insert PUC details if provided
     if (vehicleData.pucNumber) {
       await client.query(`
-        INSERT INTO puc_details (vehicle_id, puc_number, puc_date, puc_tenure, puc_from, puc_to, puc_contact_no, puc_address)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO puc_details (vehicle_id, puc_number, puc_date, puc_tenure, puc_from, puc_to, puc_contact_no, puc_address, status, created_by, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE', $9, NOW())
       `, [vehicleId, vehicleData.pucNumber, vehicleData.pucDate, vehicleData.pucTenure,
-          vehicleData.pucFrom, vehicleData.pucTo, vehicleData.pucContactNo, vehicleData.pucAddress]);
+          vehicleData.pucFrom, vehicleData.pucTo, vehicleData.pucContactNo, vehicleData.pucAddress, req.user.id]);
     }
 
     // Insert Insurance details if provided
     if (vehicleData.insuranceCompanyName) {
       await client.query(`
-        INSERT INTO insurance_details (vehicle_id, company_name, policy_number, insurance_type, insurance_date, insurance_tenure, insurance_from, insurance_to, insurance_contact_no, insurance_address)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO insurance_details (vehicle_id, company_name, policy_number, insurance_type, insurance_date, insurance_tenure, insurance_from, insurance_to, insurance_contact_no, insurance_address, status, created_by, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE', $11, NOW())
       `, [vehicleId, vehicleData.insuranceCompanyName, vehicleData.policyNumber, vehicleData.insuranceType,
           vehicleData.insuranceDate, vehicleData.insuranceTenure, vehicleData.insuranceFrom,
-          vehicleData.insuranceTo, vehicleData.insuranceContactNo, vehicleData.insuranceAddress]);
+          vehicleData.insuranceTo, vehicleData.insuranceContactNo, vehicleData.insuranceAddress, req.user.id]);
     }
 
     // Insert Fitness details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.fcNumber) {
       await client.query(`
-        INSERT INTO fitness_details (vehicle_id, fc_number, fc_tenure_from, fc_tenure_to, fc_contact_no, fc_address)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO fitness_details (vehicle_id, fc_number, fc_tenure_from, fc_tenure_to, fc_contact_no, fc_address, status, created_by, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', $7, NOW())
       `, [vehicleId, vehicleData.fcNumber, vehicleData.fcTenureFrom, vehicleData.fcTenureTo,
-          vehicleData.fcContactNo, vehicleData.fcAddress]);
+          vehicleData.fcContactNo, vehicleData.fcAddress, req.user.id]);
     }
 
     // Insert Permit details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.permitNumber) {
       await client.query(`
-        INSERT INTO permit_details (vehicle_id, permit_number, permit_tenure_from, permit_tenure_to, permit_contact_no, permit_address)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO permit_details (vehicle_id, permit_number, permit_tenure_from, permit_tenure_to, permit_contact_no, permit_address, status, created_by, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', $7, NOW())
       `, [vehicleId, vehicleData.permitNumber, vehicleData.permitTenureFrom, vehicleData.permitTenureTo,
-          vehicleData.permitContactNo, vehicleData.permitAddress]);
+          vehicleData.permitContactNo, vehicleData.permitAddress, req.user.id]);
     }
 
-    // Insert Tax details if Transport vehicle
-    if (vehicleData.type === 'Transport' && vehicleData.taxNumber) {
+    // Insert Tax details if provided
+    if (vehicleData.taxNumber) {
       await client.query(`
-        INSERT INTO tax_details (vehicle_id, tax_number, tax_tenure_from, tax_tenure_to, tax_contact_no, tax_address)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO tax_details (vehicle_id, tax_number, tax_tenure_from, tax_tenure_to, tax_contact_no, tax_address, status, created_by, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', $7, NOW())
       `, [vehicleId, vehicleData.taxNumber, vehicleData.taxTenureFrom, vehicleData.taxTenureTo,
-          vehicleData.taxContactNo, vehicleData.taxAddress]);
+          vehicleData.taxContactNo, vehicleData.taxAddress, req.user.id]);
     }
 
     await client.query('COMMIT');
@@ -328,29 +366,14 @@ router.post('/', authenticateToken, uploadDocuments, async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Vehicle created successfully',
-      data: { id: vehicleId }
+      data: {
+        id: vehicleId,
+        registrationNumber: vehicleData.registrationNumber
+      }
     });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Create vehicle error:', error);
-    
-    // Clean up uploaded files on error
-    if (req.files) {
-      Object.values(req.files).flat().forEach(file => {
-        if (fs.existsSync(file.path)) {
-          fs.unlinkSync(file.path);
-        }
-      });
-    }
-    
-    // Check for unique constraint violation
-    if (error.code === '23505' && error.constraint === 'vehicles_registration_number_key') {
-      return res.status(400).json({
-        success: false,
-        message: 'Registration number already exists'
-      });
-    }
-    
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -360,113 +383,162 @@ router.post('/', authenticateToken, uploadDocuments, async (req, res) => {
   }
 });
 
-// Update vehicle by ID with documents
+// Update vehicle by ID
 router.put('/:id', authenticateToken, uploadDocuments, async (req, res) => {
   const client = await pool.connect();
-  
   try {
     await client.query('BEGIN');
-
     const { id } = req.params;
     const vehicleData = req.body;
-    
+
     // Convert empty strings to null for optional fields
     Object.keys(vehicleData).forEach(key => {
       if (vehicleData[key] === '') vehicleData[key] = null;
     });
 
-    // Check if vehicle exists
-    const existingVehicle = await client.query('SELECT id FROM vehicles WHERE id = $1', [id]);
-    if (existingVehicle.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({
-        success: false,
-        message: 'Vehicle not found'
-      });
-    }
-
-    // Update vehicle
+    // Update vehicle (add registration_valid_upto)
     const vehicleQuery = `
       UPDATE vehicles
-      SET 
-        aadhar_number = $1, mobile_number = $2, registered_owner_name = $3, registration_number = $4,
-        guardian_info = $5, date_of_registration = $6, address = $7, registration_valid_upto = $8,
-        tax_upto = $9, insurance_upto = $10, fc_valid_upto = $11, hypothecated_to = $12, permit_upto = $13,
-        chassis_number = $14, body_type = $15, engine_number = $16, colour = $17, vehicle_class = $18,
-        fuel_used = $19, makers_name = $20, cubic_capacity = $21, makers_classification = $22,
-        seating_capacity = $23, month_year_of_manufacture = $24, ulw = $25, gvw = $26, subject = $27,
-        registering_authority = $28, type = $29, updated_at = NOW(), updated_by = $30
-      WHERE id = $31
+      SET
+        registration_number = $1,
+        date_of_registration = $2,
+        registration_valid_upto = $3,
+        subject = $4,
+        registering_authority = $5,
+        type = $6,
+        chassis_number = $7,
+        body_type = $8,
+        engine_number = $9,
+        colour = $10,
+        vehicle_class = $11,
+        fuel_used = $12,
+        makers_name = $13,
+        cubic_capacity = $14,
+        makers_classification = $15,
+        seating_capacity = $16,
+        month_year_of_manufacture = $17,
+        ulw = $18,
+        gvw = $19,
+        updated_by = $20
+      WHERE id = $21
     `;
-
     const vehicleValues = [
-      vehicleData.aadharNumber, vehicleData.mobileNumber, vehicleData.registeredOwnerName,
-      vehicleData.registrationNumber, vehicleData.guardianInfo, vehicleData.dateOfRegistration,
-      vehicleData.address, vehicleData.registrationValidUpto, vehicleData.taxUpto,
-      vehicleData.insuranceUpto, vehicleData.fcValidUpto, vehicleData.hypothecatedTo,
-      vehicleData.permitUpto, vehicleData.chassisNumber, vehicleData.bodyType,
-      vehicleData.engineNumber, vehicleData.colour, vehicleData.vehicleClass,
-      vehicleData.fuelUsed, vehicleData.makersName, vehicleData.cubicCapacity,
-      vehicleData.makersClassification, vehicleData.seatingCapacity,
-      vehicleData.monthYearOfManufacture, vehicleData.ulw, vehicleData.gvw,
-      vehicleData.subject, vehicleData.registeringAuthority, vehicleData.type,
-      req.user.id, id
+      vehicleData.registrationNumber, vehicleData.dateOfRegistration, vehicleData.registrationValidUpto, vehicleData.subject, vehicleData.registeringAuthority, vehicleData.type, vehicleData.chassisNumber, vehicleData.bodyType, vehicleData.engineNumber, vehicleData.colour, vehicleData.vehicleClass, vehicleData.fuelUsed, vehicleData.makersName, vehicleData.cubicCapacity, vehicleData.makersClassification, vehicleData.seatingCapacity, vehicleData.monthYearOfManufacture, vehicleData.ulw, vehicleData.gvw, req.user.id, id
     ];
-
     await client.query(vehicleQuery, vehicleValues);
 
-    // Save new uploaded documents (don't delete existing ones, just add new)
+    // Update owner details
+    const ownerQuery = `
+      UPDATE vehicle_owner_details
+      SET
+        aadhar_number = $1,
+        mobile_number = $2,
+        registered_owner_name = $3,
+        guardian_info = $4,
+        address = $5
+      WHERE vehicle_id = $6
+    `;
+    await client.query(ownerQuery, [
+      vehicleData.aadharNumber,
+      vehicleData.mobileNumber,
+      vehicleData.registeredOwnerName,
+      vehicleData.guardianInfo,
+      vehicleData.address,
+      id
+    ]);
+
+    // Update Hypothecation details if provided
+    if (vehicleData.isHPA || vehicleData.hypothecatedTo) {
+      await client.query(`
+        INSERT INTO hypothication_details (vehicle_id, is_hpa, hypothicated_to, status)
+        VALUES ($1, $2, $3, 'ACTIVE')
+        ON CONFLICT (vehicle_id) DO UPDATE SET
+          is_hpa = EXCLUDED.is_hpa,
+          hypothicated_to = EXCLUDED.hypothicated_to
+      `, [id, !!vehicleData.isHPA, vehicleData.hypothecatedTo || null]);
+    }
+
+    // Save uploaded documents
     await saveDocumentFiles(client, id, req.files, req.user.id);
 
-    // Delete existing related records first
-    await client.query('DELETE FROM puc_details WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM insurance_details WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM fitness_details WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM permit_details WHERE vehicle_id = $1', [id]);
-    await client.query('DELETE FROM tax_details WHERE vehicle_id = $1', [id]);
-
-    // Insert PUC details if provided
+    // Update PUC details if provided
     if (vehicleData.pucNumber) {
       await client.query(`
-        INSERT INTO puc_details (vehicle_id, puc_number, puc_date, puc_tenure, puc_from, puc_to, puc_contact_no, puc_address)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO puc_details (vehicle_id, puc_number, puc_date, puc_tenure, puc_from, puc_to, puc_contact_no, puc_address, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE')
+        ON CONFLICT (vehicle_id) DO UPDATE SET
+          puc_number = EXCLUDED.puc_number,
+          puc_date = EXCLUDED.puc_date,
+          puc_tenure = EXCLUDED.puc_tenure,
+          puc_from = EXCLUDED.puc_from,
+          puc_to = EXCLUDED.puc_to,
+          puc_contact_no = EXCLUDED.puc_contact_no,
+          puc_address = EXCLUDED.puc_address
       `, [id, vehicleData.pucNumber, vehicleData.pucDate, vehicleData.pucTenure,
           vehicleData.pucFrom, vehicleData.pucTo, vehicleData.pucContactNo, vehicleData.pucAddress]);
     }
 
-    // Insert Insurance details if provided
+    // Update Insurance details if provided
     if (vehicleData.insuranceCompanyName) {
       await client.query(`
-        INSERT INTO insurance_details (vehicle_id, company_name, policy_number, insurance_type, insurance_date, insurance_tenure, insurance_from, insurance_to, insurance_contact_no, insurance_address)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO insurance_details (vehicle_id, company_name, policy_number, insurance_type, insurance_date, insurance_tenure, insurance_from, insurance_to, insurance_contact_no, insurance_address, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE')
+        ON CONFLICT (vehicle_id) DO UPDATE SET
+          company_name = EXCLUDED.company_name,
+          policy_number = EXCLUDED.policy_number,
+          insurance_type = EXCLUDED.insurance_type,
+          insurance_date = EXCLUDED.insurance_date,
+          insurance_tenure = EXCLUDED.insurance_tenure,
+          insurance_from = EXCLUDED.insurance_from,
+          insurance_to = EXCLUDED.insurance_to,
+          insurance_contact_no = EXCLUDED.insurance_contact_no,
+          insurance_address = EXCLUDED.insurance_address
       `, [id, vehicleData.insuranceCompanyName, vehicleData.policyNumber, vehicleData.insuranceType,
           vehicleData.insuranceDate, vehicleData.insuranceTenure, vehicleData.insuranceFrom,
           vehicleData.insuranceTo, vehicleData.insuranceContactNo, vehicleData.insuranceAddress]);
     }
 
-    // Insert Fitness details if Transport vehicle
+    // Update Fitness details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.fcNumber) {
       await client.query(`
-        INSERT INTO fitness_details (vehicle_id, fc_number, fc_tenure_from, fc_tenure_to, fc_contact_no, fc_address)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO fitness_details (vehicle_id, fc_number, fc_tenure_from, fc_tenure_to, fc_contact_no, fc_address, status)
+        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE')
+        ON CONFLICT (vehicle_id) DO UPDATE SET
+          fc_number = EXCLUDED.fc_number,
+          fc_tenure_from = EXCLUDED.fc_tenure_from,
+          fc_tenure_to = EXCLUDED.fc_tenure_to,
+          fc_contact_no = EXCLUDED.fc_contact_no,
+          fc_address = EXCLUDED.fc_address
       `, [id, vehicleData.fcNumber, vehicleData.fcTenureFrom, vehicleData.fcTenureTo,
           vehicleData.fcContactNo, vehicleData.fcAddress]);
     }
 
-    // Insert Permit details if Transport vehicle
+    // Update Permit details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.permitNumber) {
       await client.query(`
-        INSERT INTO permit_details (vehicle_id, permit_number, permit_tenure_from, permit_tenure_to, permit_contact_no, permit_address)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO permit_details (vehicle_id, permit_number, permit_tenure_from, permit_tenure_to, permit_contact_no, permit_address, status)
+        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE')
+        ON CONFLICT (vehicle_id) DO UPDATE SET
+          permit_number = EXCLUDED.permit_number,
+          permit_tenure_from = EXCLUDED.permit_tenure_from,
+          permit_tenure_to = EXCLUDED.permit_tenure_to,
+          permit_contact_no = EXCLUDED.permit_contact_no,
+          permit_address = EXCLUDED.permit_address
       `, [id, vehicleData.permitNumber, vehicleData.permitTenureFrom, vehicleData.permitTenureTo,
           vehicleData.permitContactNo, vehicleData.permitAddress]);
     }
 
-    // Insert Tax details if Transport vehicle
-    if (vehicleData.type === 'Transport' && vehicleData.taxNumber) {
+    // Update Tax details if provided
+    if (vehicleData.taxNumber) {
       await client.query(`
-        INSERT INTO tax_details (vehicle_id, tax_number, tax_tenure_from, tax_tenure_to, tax_contact_no, tax_address)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO tax_details (vehicle_id, tax_number, tax_tenure_from, tax_tenure_to, tax_contact_no, tax_address, status)
+        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE')
+        ON CONFLICT (vehicle_id) DO UPDATE SET
+          tax_number = EXCLUDED.tax_number,
+          tax_tenure_from = EXCLUDED.tax_tenure_from,
+          tax_tenure_to = EXCLUDED.tax_tenure_to,
+          tax_contact_no = EXCLUDED.tax_contact_no,
+          tax_address = EXCLUDED.tax_address
       `, [id, vehicleData.taxNumber, vehicleData.taxTenureFrom, vehicleData.taxTenureTo,
           vehicleData.taxContactNo, vehicleData.taxAddress]);
     }
@@ -480,24 +552,6 @@ router.put('/:id', authenticateToken, uploadDocuments, async (req, res) => {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Update vehicle error:', error);
-    
-    // Clean up uploaded files on error
-    if (req.files) {
-      Object.values(req.files).flat().forEach(file => {
-        if (fs.existsSync(file.path)) {
-          fs.unlinkSync(file.path);
-        }
-      });
-    }
-    
-    // Check for unique constraint violation
-    if (error.code === '23505' && error.constraint === 'vehicles_registration_number_key') {
-      return res.status(400).json({
-        success: false,
-        message: 'Registration number already exists'
-      });
-    }
-    
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -510,35 +564,26 @@ router.put('/:id', authenticateToken, uploadDocuments, async (req, res) => {
 // Delete vehicle by ID
 router.delete('/:id', authenticateToken, async (req, res) => {
   const client = await pool.connect();
-  
   try {
     await client.query('BEGIN');
-    
     const { id } = req.params;
 
-    // Get all documents for this vehicle to delete files
-    const documentsResult = await client.query(
-      'SELECT file_path FROM vehicle_documents WHERE vehicle_id = $1',
-      [id]
-    );
+    // Check if vehicle exists
+    const vehicleCheckQuery = 'SELECT id FROM vehicles WHERE id = $1';
+    const vehicleCheckResult = await client.query(vehicleCheckQuery, [id]);
 
-    // Delete the vehicle (cascade will handle related records)
-    const result = await client.query('DELETE FROM vehicles WHERE id = $1 RETURNING id', [id]);
-
-    if (result.rows.length === 0) {
-      await client.query('ROLLBACK');
+    if (vehicleCheckResult.rows.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Vehicle not found'
       });
     }
 
-    // Delete physical files
-    documentsResult.rows.forEach(doc => {
-      if (fs.existsSync(doc.file_path)) {
-        fs.unlinkSync(doc.file_path);
-      }
-    });
+    // Delete related documents
+    await client.query('DELETE FROM vehicle_documents WHERE vehicle_id = $1', [id]);
+
+    // Delete vehicle
+    await client.query('DELETE FROM vehicles WHERE id = $1', [id]);
 
     await client.query('COMMIT');
 
@@ -549,100 +594,6 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Delete vehicle error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
-  } finally {
-    client.release();
-  }
-});
-
-// Download document file
-router.get('/documents/:id/download', authenticateToken, async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const result = await pool.query(
-      'SELECT file_path, original_name, mime_type FROM vehicle_documents WHERE id = $1',
-      [id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Document not found'
-      });
-    }
-
-    const document = result.rows[0];
-
-    if (!fs.existsSync(document.file_path)) {
-      return res.status(404).json({
-        success: false,
-        message: 'File not found on server'
-      });
-    }
-
-    // Set appropriate headers for file download
-    res.setHeader('Content-Disposition', `attachment; filename="${document.original_name}"`);
-    res.setHeader('Content-Type', document.mime_type);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-    
-    const fileStream = fs.createReadStream(document.file_path);
-    fileStream.pipe(res);
-  } catch (error) {
-    console.error('Download document error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
-  }
-});
-
-// Delete specific document
-router.delete('/documents/:id', authenticateToken, async (req, res) => {
-  const client = await pool.connect();
-  
-  try {
-    await client.query('BEGIN');
-    
-    const { id } = req.params;
-
-    // Get document info before deleting
-    const documentResult = await client.query(
-      'SELECT file_path FROM vehicle_documents WHERE id = $1',
-      [id]
-    );
-
-    if (documentResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({
-        success: false,
-        message: 'Document not found'
-      });
-    }
-
-    const document = documentResult.rows[0];
-
-    // Delete from database
-    await client.query('DELETE FROM vehicle_documents WHERE id = $1', [id]);
-
-    // Delete physical file
-    if (fs.existsSync(document.file_path)) {
-      fs.unlinkSync(document.file_path);
-    }
-
-    await client.query('COMMIT');
-
-    res.json({
-      success: true,
-      message: 'Document deleted successfully'
-    });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Delete document error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

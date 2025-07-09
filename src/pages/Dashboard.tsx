@@ -72,6 +72,47 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // Color map for each renewal type
+  const typeColorMap: Record<string, { bg: string; border: string; text: string; badge: string }> = {
+    PUC: {
+      bg: 'bg-purple-50',
+      border: 'border-purple-200',
+      text: 'text-purple-800',
+      badge: 'bg-purple-200',
+    },
+    Insurance: {
+      bg: 'bg-blue-50',
+      border: 'border-blue-200',
+      text: 'text-blue-800',
+      badge: 'bg-blue-200',
+    },
+    Tax: {
+      bg: 'bg-yellow-50',
+      border: 'border-yellow-200',
+      text: 'text-yellow-800',
+      badge: 'bg-yellow-200',
+    },
+    FC: {
+      bg: 'bg-green-50',
+      border: 'border-green-200',
+      text: 'text-green-800',
+      badge: 'bg-green-200',
+    },
+    Permit: {
+      bg: 'bg-pink-50',
+      border: 'border-pink-200',
+      text: 'text-pink-800',
+      badge: 'bg-pink-200',
+    },
+    default: {
+      bg: 'bg-gray-50',
+      border: 'border-gray-200',
+      text: 'text-gray-800',
+      badge: 'bg-gray-200',
+    },
+  };
+  const getTypeStyle = (type: string) => typeColorMap[type] || typeColorMap.default;
+
   if (statsLoading) {
     return (
       <MainLayout>
@@ -188,48 +229,33 @@ const Dashboard: React.FC = () => {
               <ErrorMessage message={renewalsError} onRetry={refetchRenewals} showIcon={false} />
             ) : (
               <div className="space-y-4">
-                {upcomingRenewals && upcomingRenewals.slice(0, 3).map((renewal: any) => (
-                  <div 
-                    key={renewal.id}
-                    className={`p-3 ${
-                      renewal.status === 'overdue' 
-                        ? 'bg-red-50 border-red-100' 
-                        : renewal.days_left <= 7 
-                        ? 'bg-yellow-50 border-yellow-100'
-                        : 'bg-blue-50 border-blue-100'
-                    } border rounded-lg cursor-pointer`}
-                    onClick={() => navigate('/renewal-dues')}
-                  >
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2 gap-1">
-                      <h4 className={`text-sm font-medium ${
-                        renewal.status === 'overdue'
-                          ? 'text-red-800'
-                          : renewal.days_left <= 7
-                          ? 'text-yellow-800'
-                          : 'text-blue-800'
-                      } truncate`}>
-                        {renewal.renewal_type} Renewal
-                      </h4>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded flex-shrink-0 ${
-                        renewal.status === 'overdue'
-                          ? 'bg-red-200 text-red-800'
-                          : renewal.days_left <= 7
-                          ? 'bg-yellow-200 text-yellow-800'
-                          : 'bg-blue-200 text-blue-800'
-                      }`}>
-                        {renewal.status === 'overdue'
-                          ? `${Math.abs(renewal.days_left)} days overdue`
-                          : `${renewal.days_left} days left`}
-                      </span>
+                {upcomingRenewals && upcomingRenewals.slice(0, 3).map((renewal: any) => {
+                  const style = getTypeStyle(renewal.renewal_type);
+                  return (
+                    <div 
+                      key={renewal.id}
+                      className={`p-3 ${style.bg} ${style.border} border rounded-lg cursor-pointer`}
+                      onClick={() => navigate('/renewal-dues')}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2 gap-1">
+                        <h4 className={`text-sm font-medium ${style.text} truncate`}>
+                          {renewal.renewal_type} Renewal
+                        </h4>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded flex-shrink-0 ${style.badge} ${style.text}`}>
+                          {renewal.status === 'overdue'
+                            ? `${Math.abs(renewal.days_left)} days overdue`
+                            : `${renewal.days_left} days left`}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-1 truncate">
+                        {renewal.registration_number} - {renewal.registered_owner_name}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Due: {new Date(renewal.due_date).toLocaleDateString()}
+                      </p>
                     </div>
-                    <p className="text-sm text-gray-600 mb-1 truncate">
-                      {renewal.registration_number} - {renewal.registered_owner_name}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Due: {new Date(renewal.due_date).toLocaleDateString()}
-                    </p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </Card>

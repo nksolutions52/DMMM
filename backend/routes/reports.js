@@ -12,7 +12,8 @@ router.get('/vehicles/registration', authenticateToken, async (req, res) => {
 
     let query = `
       SELECT v.*, 
-             CASE WHEN v.type = 'Transport' THEN 'Commercial' ELSE 'Private' END as category
+             CASE WHEN UPPER(v.type) = 'TRANSPORT' THEN 'COMMERCIAL' ELSE 'PRIVATE' END as category,
+             UPPER(v.type) as type
       FROM vehicles v
       WHERE 1=1
     `;
@@ -62,10 +63,11 @@ router.get('/services/summary', authenticateToken, async (req, res) => {
     const offset = (page - 1) * limit;
 
     let query = `
-      SELECT so.*, v.registration_number, v.registered_owner_name,
-             u.name as agent_name
+      SELECT so.*, v.registration_number, o.registered_owner_name,
+             u.name as agent_name, UPPER(so.status) as status, UPPER(so.service_type) as service_type
       FROM service_orders so
       JOIN vehicles v ON so.vehicle_id = v.id
+      LEFT JOIN vehicle_owner_details o ON v.id = o.vehicle_id
       LEFT JOIN users u ON so.agent_id = u.id
       WHERE 1=1
     `;

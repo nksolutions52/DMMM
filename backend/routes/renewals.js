@@ -20,12 +20,13 @@ router.get('/', authenticateToken, async (req, res) => {
     const offset = (page - 1) * limit;
 
     let query = `
-      SELECT rd.*, v.registration_number, v.registered_owner_name, v.makers_name, 
+      SELECT rd.*, v.registration_number, o.registered_owner_name, v.makers_name, 
              v.makers_classification, v.date_of_registration, v.chassis_number, 
-             v.engine_number, v.fuel_used, v.mobile_number, v.address
+             v.engine_number, v.fuel_used, o.mobile_number, o.address, UPPER(rd.status) as status, UPPER(rd.renewal_type) as renewal_type
       FROM renewal_dues rd
       JOIN vehicles v ON rd.vehicle_id = v.id
-      WHERE 1=1
+      LEFT JOIN vehicle_owner_details o ON v.id = o.vehicle_id
+      WHERE rd.status = 'pending'
     `;
     
     const queryParams = [];
@@ -33,7 +34,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
     if (search) {
       paramCount++;
-      query += ` AND (v.registration_number ILIKE $${paramCount} OR v.registered_owner_name ILIKE $${paramCount})`;
+      query += ` AND (v.registration_number ILIKE $${paramCount} OR o.registered_owner_name ILIKE $${paramCount})`;
       queryParams.push(`%${search}%`);
     }
 
@@ -72,14 +73,15 @@ router.get('/', authenticateToken, async (req, res) => {
     let countQuery = `
       SELECT COUNT(*) FROM renewal_dues rd
       JOIN vehicles v ON rd.vehicle_id = v.id
-      WHERE 1=1
+      LEFT JOIN vehicle_owner_details o ON v.id = o.vehicle_id
+      WHERE rd.status = 'pending'
     `;
     const countParams = [];
     let countParamCount = 0;
 
     if (search) {
       countParamCount++;
-      countQuery += ` AND (v.registration_number ILIKE $${countParamCount} OR v.registered_owner_name ILIKE $${countParamCount})`;
+      countQuery += ` AND (v.registration_number ILIKE $${countParamCount} OR o.registered_owner_name ILIKE $${countParamCount})`;
       countParams.push(`%${search}%`);
     }
 
@@ -126,11 +128,12 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     const query = `
-      SELECT rd.*, v.registration_number, v.registered_owner_name, v.makers_name, 
+      SELECT rd.*, v.registration_number, o.registered_owner_name, v.makers_name, 
              v.makers_classification, v.date_of_registration, v.chassis_number, 
-             v.engine_number, v.fuel_used, v.address, v.mobile_number
+             v.engine_number, v.fuel_used, o.address, o.mobile_number, UPPER(rd.status) as status, UPPER(rd.renewal_type) as renewal_type
       FROM renewal_dues rd
       JOIN vehicles v ON rd.vehicle_id = v.id
+      LEFT JOIN vehicle_owner_details o ON v.id = o.vehicle_id
       WHERE rd.id = $1
     `;
 
@@ -185,9 +188,10 @@ router.post('/:id/process', authenticateToken, async (req, res) => {
 
     // Get renewal due details
     const renewalResult = await client.query(`
-      SELECT rd.*, v.registration_number, v.registered_owner_name
+      SELECT rd.*, v.registration_number, o.registered_owner_name
       FROM renewal_dues rd
       JOIN vehicles v ON rd.vehicle_id = v.id
+      LEFT JOIN vehicle_owner_details o ON v.id = o.vehicle_id
       WHERE rd.id = $1
     `, [id]);
 
@@ -204,23 +208,23 @@ router.post('/:id/process', authenticateToken, async (req, res) => {
     const serviceOrderQuery = `
       INSERT INTO service_orders (
         vehicle_id, service_type, actual_amount, amount, amount_paid, customer_name, 
-        status, agent_id, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+        status, agent_id, created_at, renewal_due_id
+      ) VALUES ($1, UPPER($2), $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, $9)
       RETURNING id
     `;
 
-    const serviceType = `${renewal.renewal_type} Renewal`;
+    const serviceType = renewal.renewal_type.toUpperCase();
     const serviceOrderValues = [
       renewal.vehicle_id, serviceType, amount, amount, 0, 
-      renewal.registered_owner_name, 'pending', req.user.id
+      renewal.registered_owner_name, 'pending', req.user.id, id // <-- lowercase
     ];
 
     const serviceOrderResult = await client.query(serviceOrderQuery, serviceOrderValues);
 
-    // Update renewal due status
+    // Update renewal due status to completed
     await client.query(
       'UPDATE renewal_dues SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-      ['processing', id]
+      ['completed', id]
     );
 
     await client.query('COMMIT');
@@ -259,7 +263,7 @@ router.patch('/:id/status', authenticateToken, async (req, res) => {
     }
 
     const result = await pool.query(
-      'UPDATE renewal_dues SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id',
+      'UPDATE renewal_dues SET status = UPPER($1), updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id',
       [status, id]
     );
 

@@ -14,6 +14,8 @@ const RenewalDues: React.FC = () => {
   const [selectedRenewal, setSelectedRenewal] = useState<any>(null);
   const [renewalAmount, setRenewalAmount] = useState('');
   const [showProcessDialog, setShowProcessDialog] = useState(false);
+  const [showCheckDuesModal, setShowCheckDuesModal] = useState(false);
+  const [checkDuesResult, setCheckDuesResult] = useState<any>(null);
 
   const { data: renewalsData, loading, error, refetch } = useApi(
     () => renewalsAPI.getAll({ 
@@ -57,15 +59,57 @@ const RenewalDues: React.FC = () => {
     try {
       const result = await checkDues(() => renewalsAPI.checkDues());
       if (result.data) {
-        const { puc, insurance, tax, fitness, permit, taxDetails, total } = result.data;
-        alert(`Renewal dues check completed!\n\nNew dues found:\n• PUC: ${puc}\n• Insurance: ${insurance}\n• Tax: ${tax}\n• Fitness: ${fitness}\n• Permit: ${permit}\n• Tax Details: ${taxDetails}\n\nTotal: ${total} new renewal dues added.`);
-        refetch();
+        setCheckDuesResult(result.data);
+        setShowCheckDuesModal(true);
       }
+      refetch();
     } catch (error) {
       console.error('Check dues failed:', error);
       alert('Failed to check renewal dues. Please try again.');
     }
   };
+
+  // Color map for each renewal type
+  const typeColorMap: Record<string, { bg: string; border: string; text: string; badge: string }> = {
+    PUC: {
+      bg: 'bg-purple-50',
+      border: 'border-purple-200',
+      text: 'text-purple-800',
+      badge: 'bg-purple-200',
+    },
+    Insurance: {
+      bg: 'bg-blue-50',
+      border: 'border-blue-200',
+      text: 'text-blue-800',
+      badge: 'bg-blue-200',
+    },
+    Tax: {
+      bg: 'bg-yellow-50',
+      border: 'border-yellow-200',
+      text: 'text-yellow-800',
+      badge: 'bg-yellow-200',
+    },
+    FC: {
+      bg: 'bg-green-50',
+      border: 'border-green-200',
+      text: 'text-green-800',
+      badge: 'bg-green-200',
+    },
+    Permit: {
+      bg: 'bg-pink-50',
+      border: 'border-pink-200',
+      text: 'text-pink-800',
+      badge: 'bg-pink-200',
+    },
+    default: {
+      bg: 'bg-gray-50',
+      border: 'border-gray-200',
+      text: 'text-gray-800',
+      badge: 'bg-gray-200',
+    },
+  };
+
+  const getTypeStyle = (type: string) => typeColorMap[type] || typeColorMap.default;
 
   const getStatusStyle = (status: string, daysLeft: number) => {
     if (status === 'overdue' || daysLeft < 0) {
@@ -189,7 +233,7 @@ const RenewalDues: React.FC = () => {
 
         <div className="space-y-4">
           {renewals.map((due: any) => {
-            const style = getStatusStyle(due.status, due.days_left);
+            const style = getTypeStyle(due.renewal_type);
             
             return (
               <div
@@ -226,11 +270,7 @@ const RenewalDues: React.FC = () => {
                         <p className="text-sm text-gray-500">
                           Due Date: {new Date(due.due_date).toLocaleDateString()}
                         </p>
-                        {due.amount && (
-                          <p className="text-sm text-gray-500">
-                            Amount: ₹{due.amount}
-                          </p>
-                        )}
+                        {/* Remove amount display here if present */}
                       </div>
                     </div>
                   </div>
@@ -411,6 +451,51 @@ const RenewalDues: React.FC = () => {
                 >
                   Create Service Order
                 </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Check Dues Result Modal */}
+      {showCheckDuesModal && checkDuesResult && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-md mx-4">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h2 className="text-lg font-semibold">Renewal Dues Check Result</h2>
+              <button
+                onClick={() => setShowCheckDuesModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <table className="w-full text-sm mb-4">
+                <thead>
+                  <tr>
+                    <th className="text-left py-1">Type</th>
+                    <th className="text-center py-1">Expired</th>
+                    <th className="text-center py-1">Due</th>
+                    <th className="text-center py-1">Added</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {['PUC', 'Insurance', 'Permit', 'FC', 'Tax'].map(type => (
+                    <tr key={type}>
+                      <td className="py-1">{type}</td>
+                      <td className="text-center py-1">{checkDuesResult[type]?.expired ?? 0}</td>
+                      <td className="text-center py-1">{checkDuesResult[type]?.due ?? 0}</td>
+                      <td className="text-center py-1">{checkDuesResult[type]?.added ?? 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="text-right font-semibold">
+                Total new dues added: <span className="text-blue-600">{checkDuesResult.total ?? 0}</span>
+              </div>
+              <div className="flex justify-end mt-4">
+                <Button onClick={() => setShowCheckDuesModal(false)}>Close</Button>
               </div>
             </div>
           </div>

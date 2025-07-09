@@ -14,11 +14,21 @@ const ServiceOrders: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [orderDetails, setOrderDetails] = useState<any>(null);
-  const [payAmount, setPayAmount] = useState<number>(0);
+  const [payAmount, setPayAmount] = useState<string>("");
+  const [completeFromDate, setCompleteFromDate] = useState("");
+  const [completeToDate, setCompleteToDate] = useState("");
+  const [completeNumber, setCompleteNumber] = useState("");
   const [popoverOpenId, setPopoverOpenId] = useState<string | null>(null);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const [transferAadhar, setTransferAadhar] = useState('');
+  const [transferMobile, setTransferMobile] = useState('');
+  const [transferOwner, setTransferOwner] = useState('');
+  const [transferGuardian, setTransferGuardian] = useState('');
+  const [transferAddress, setTransferAddress] = useState('');
+  const [hpaHypothecatedTo, setHpaHypothecatedTo] = useState('');
 
   const { data: ordersData, loading, error, refetch } = useApi(
     () => servicesAPI.getOrders({ 
@@ -48,13 +58,9 @@ const ServiceOrders: React.FC = () => {
     }
   };
 
-  const handleComplete = async (order: any) => {
-    try {
-      await updateOrderStatus(() => servicesAPI.updateOrderStatus(order.id, 'completed'));
-      refetch();
-    } catch (error) {
-      console.error('Update failed:', error);
-    }
+  const handleComplete = (order: any) => {
+    setSelectedOrder(order);
+    setShowCompleteModal(true);
     setPopoverOpenId(null);
   };
 
@@ -89,16 +95,92 @@ const ServiceOrders: React.FC = () => {
   };
 
   const handlePay = async () => {
-    if (selectedOrder && payAmount > 0) {
+    const payValue = Number(payAmount);
+    if (selectedOrder && payValue > 0) {
       try {
-        await makePayment(() => servicesAPI.makePayment(selectedOrder.id, payAmount));
+        await makePayment(() => servicesAPI.makePayment(selectedOrder.id, payValue));
         setShowPaymentModal(false);
         setSelectedOrder(null);
-        setPayAmount(0);
+        setPayAmount("");
         refetch();
       } catch (error) {
         console.error('Payment failed:', error);
       }
+    }
+  };
+
+  const getNumberLabel = (serviceType: string) => {
+    switch (serviceType?.toLowerCase()) {
+      case 'fitness': return 'FC Number';
+      case 'insurance': return 'Policy Number';
+      case 'permit': return 'Permit Number';
+      case 'pollution': return 'PUC Number';
+      case 'tax': return 'Tax Number';
+      default: return 'Number';
+    }
+  };
+
+  const handleSubmitComplete = async () => {
+    if (!completeFromDate || !completeToDate || !completeNumber) {
+      alert("Please enter all required fields.");
+      return;
+    }
+    try {
+      // Call backend to update status and create service record
+      await updateOrderStatus(() =>
+        servicesAPI.completeOrder(
+          selectedOrder.id,
+          completeFromDate,
+          completeToDate,
+          completeNumber,
+          selectedOrder.service_type // <-- pass this
+        )
+      );
+      setShowCompleteModal(false);
+      setSelectedOrder(null);
+      setCompleteFromDate("");
+      setCompleteToDate("");
+      setCompleteNumber("");
+      refetch();
+    } catch (error) {
+      console.error('Complete failed:', error);
+      alert('Failed to complete order.');
+    }
+  };
+
+  const handleSubmitTransferComplete = async () => {
+    if (!transferAadhar || !transferMobile || !transferOwner || !transferAddress) {
+      alert("Please enter all required fields.");
+      return;
+    }
+    try {
+      await updateOrderStatus(() =>
+        servicesAPI.completeOrder(
+          selectedOrder.id,
+          undefined, // fromDate
+          undefined, // toDate
+          undefined, // number
+          selectedOrder.service_type,
+          {
+            aadharNumber: transferAadhar,
+            mobileNumber: transferMobile,
+            registeredOwnerName: transferOwner,
+            guardianInfo: transferGuardian,
+            address: transferAddress,
+          }
+        )
+      );
+      setShowCompleteModal(false);
+      setSelectedOrder(null);
+      setTransferAadhar('');
+      setTransferMobile('');
+      setTransferOwner('');
+      setTransferGuardian('');
+      setTransferAddress('');
+      refetch();
+    } catch (error) {
+      console.error('Complete failed:', error);
+      alert('Failed to complete transfer.');
     }
   };
 
@@ -150,6 +232,9 @@ const ServiceOrders: React.FC = () => {
       </MainLayout>
     );
   }
+
+  const isTransfer = selectedOrder && selectedOrder.service_type?.toLowerCase() === 'transfer';
+  const isHpaOrHpt = selectedOrder && ['hpa', 'hpt'].includes(selectedOrder.service_type?.toLowerCase());
 
   return (
     <MainLayout>
@@ -437,7 +522,8 @@ const ServiceOrders: React.FC = () => {
                   min={1}
                   max={Number(selectedOrder.amount) - Number(selectedOrder.amount_paid ?? 0)}
                   value={payAmount}
-                  onChange={e => setPayAmount(Number(e.target.value))}
+                  onChange={e => setPayAmount(e.target.value)}
+                  placeholder="Enter amount"
                 />
               </div>
               <div className="flex justify-end">
@@ -445,8 +531,10 @@ const ServiceOrders: React.FC = () => {
                   className="bg-blue-600 text-white px-4 py-2 rounded"
                   onClick={handlePay}
                   disabled={
-                    payAmount < 1 ||
-                    payAmount > (Number(selectedOrder.amount) - Number(selectedOrder.amount_paid ?? 0))
+                    !payAmount ||
+                    isNaN(Number(payAmount)) ||
+                    Number(payAmount) < 1 ||
+                    Number(payAmount) > (Number(selectedOrder.amount) - Number(selectedOrder.amount_paid ?? 0))
                   }
                 >
                   Pay
@@ -602,6 +690,194 @@ const ServiceOrders: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Complete Modal */}
+      {showCompleteModal && selectedOrder && isHpaOrHpt && selectedOrder.service_type?.toLowerCase() === 'hpt' ? (
+        // HPT Modal
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md relative">
+            <button
+              className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+              onClick={() => setShowCompleteModal(false)}
+            >
+              <X size={20} />
+            </button>
+            <h2 className="text-lg font-bold mb-4">Hypothecation Termination (HPT)</h2>
+            <div className="mb-6 text-red-600 font-semibold">
+              Are you sure you want to terminate hypothication?
+            </div>
+            <div className="flex justify-end space-x-2">
+              <button
+                className="bg-gray-300 text-gray-800 px-4 py-2 rounded"
+                onClick={() => setShowCompleteModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="bg-blue-600 text-white px-4 py-2 rounded"
+                onClick={async () => {
+                  try {
+                    await updateOrderStatus(() =>
+                      servicesAPI.completeOrder(
+                        selectedOrder.id,
+                        undefined, // fromDate
+                        undefined, // toDate
+                        undefined, // number
+                        selectedOrder.service_type
+                      )
+                    );
+                    setShowCompleteModal(false);
+                    setSelectedOrder(null);
+                    refetch();
+                  } catch (error) {
+                    alert('Failed to complete HPT order.');
+                    console.error(error);
+                  }
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : showCompleteModal && selectedOrder && isHpaOrHpt ? (
+        // HPA Modal (if you want a separate modal for HPA, keep it here)
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md relative">
+            <button
+              className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+              onClick={() => setShowCompleteModal(false)}
+            >
+              <X size={20} />
+            </button>
+            <h2 className="text-lg font-bold mb-4">Add Hypothecation (HPA)</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">Hypothecated To</label>
+                <input
+                  type="text"
+                  className="w-full border rounded px-3 py-2"
+                  value={hpaHypothecatedTo}
+                  onChange={e => setHpaHypothecatedTo(e.target.value)}
+                  placeholder="Enter bank or financier name"
+                />
+              </div>
+              <div className="flex justify-end">
+                <button
+                  className="bg-blue-600 text-white px-4 py-2 rounded"
+                  onClick={async () => {
+                    if (!hpaHypothecatedTo) {
+                      alert('Please enter Hypothecated To');
+                      return;
+                    }
+                    try {
+                      await updateOrderStatus(() =>
+                        servicesAPI.completeOrder(
+                          selectedOrder.id,
+                          undefined, // fromDate
+                          undefined, // toDate
+                          undefined, // number
+                          selectedOrder.service_type,
+                          { hypothicatedTo: hpaHypothecatedTo }
+                        )
+                      );
+                      setShowCompleteModal(false);
+                      setSelectedOrder(null);
+                      setHpaHypothecatedTo('');
+                      refetch();
+                    } catch (error) {
+                      alert('Failed to complete HPA order.');
+                      console.error(error);
+                    }
+                  }}
+                >
+                  Submit
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : showCompleteModal && selectedOrder && isTransfer ? (
+        // ...your transfer modal...
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md relative">
+            <button
+              className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+              onClick={() => setShowCompleteModal(false)}
+            >
+              <X size={20} />
+            </button>
+            <h2 className="text-lg font-bold mb-4">Complete Transfer of Ownership</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">Aadhar Number</label>
+                <input type="text" className="w-full border rounded px-3 py-2" value={transferAadhar} onChange={e => setTransferAadhar(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">Mobile Number</label>
+                <input type="text" className="w-full border rounded px-3 py-2" value={transferMobile} onChange={e => setTransferMobile(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">Registered Owner Name</label>
+                <input type="text" className="w-full border rounded px-3 py-2" value={transferOwner} onChange={e => setTransferOwner(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">Guardian Info</label>
+                <input type="text" className="w-full border rounded px-3 py-2" value={transferGuardian} onChange={e => setTransferGuardian(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">Address</label>
+                <input type="text" className="w-full border rounded px-3 py-2" value={transferAddress} onChange={e => setTransferAddress(e.target.value)} />
+              </div>
+              <div className="flex justify-end">
+                <button className="bg-blue-600 text-white px-4 py-2 rounded" onClick={handleSubmitTransferComplete}>Submit</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : showCompleteModal && selectedOrder ? (
+        // General/Old Modal
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md relative">
+            <button
+              className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+              onClick={() => setShowCompleteModal(false)}
+            >
+              <X size={20} />
+            </button>
+            <h2 className="text-lg font-bold mb-4">Complete Service Order</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">Vehicle Number</label>
+                <input className="w-full bg-gray-100 rounded px-3 py-2" readOnly value={selectedOrder.registration_number} />
+              </div>
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">Owner Name</label>
+                <input className="w-full bg-gray-100 rounded px-3 py-2" readOnly value={selectedOrder.customer_name} />
+              </div>
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">Service Type</label>
+                <input className="w-full bg-gray-100 rounded px-3 py-2" readOnly value={selectedOrder.service_type} />
+              </div>
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">{getNumberLabel(selectedOrder.service_type)}</label>
+                <input type="text" className="w-full border rounded px-3 py-2" value={completeNumber} onChange={e => setCompleteNumber(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">From Date</label>
+                <input type="date" className="w-full border rounded px-3 py-2" value={completeFromDate} onChange={e => setCompleteFromDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-gray-600 text-sm mb-1">To Date</label>
+                <input type="date" className="w-full border rounded px-3 py-2" value={completeToDate} onChange={e => setCompleteToDate(e.target.value)} />
+              </div>
+              <div className="flex justify-end">
+                <button className="bg-blue-600 text-white px-4 py-2 rounded" onClick={handleSubmitComplete}>Submit</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </MainLayout>
   );
 };

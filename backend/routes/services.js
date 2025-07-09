@@ -38,10 +38,13 @@ router.get('/orders', authenticateToken, async (req, res) => {
     const offset = (page - 1) * limit;
 
     let query = `
-      SELECT so.*, v.registration_number, v.registered_owner_name,
-             u.name as agent_name
+      SELECT so.*, v.registration_number, o.registered_owner_name,
+             u.name as agent_name, UPPER(so.status) as status, UPPER(so.service_type) as service_type
       FROM service_orders so
       JOIN vehicles v ON so.vehicle_id = v.id
+      LEFT JOIN (
+        SELECT * FROM vehicle_owner_details WHERE status = 'ACTIVE'
+      ) o ON v.id = o.vehicle_id
       LEFT JOIN users u ON so.agent_id = u.id
       WHERE 1=1
     `;
@@ -51,7 +54,7 @@ router.get('/orders', authenticateToken, async (req, res) => {
 
     if (search) {
       paramCount++;
-      query += ` AND (v.registration_number ILIKE $${paramCount} OR v.registered_owner_name ILIKE $${paramCount} OR so.service_type ILIKE $${paramCount})`;
+      query += ` AND (v.registration_number ILIKE $${paramCount} OR o.registered_owner_name ILIKE $${paramCount} OR so.service_type ILIKE $${paramCount})`;
       queryParams.push(`%${search}%`);
     }
 
@@ -70,6 +73,9 @@ router.get('/orders', authenticateToken, async (req, res) => {
     let countQuery = `
       SELECT COUNT(*) FROM service_orders so
       JOIN vehicles v ON so.vehicle_id = v.id
+      LEFT JOIN (
+        SELECT * FROM vehicle_owner_details WHERE status = 'ACTIVE'
+      ) o ON v.id = o.vehicle_id
       WHERE 1=1
     `;
     const countParams = [];
@@ -77,7 +83,7 @@ router.get('/orders', authenticateToken, async (req, res) => {
 
     if (search) {
       countParamCount++;
-      countQuery += ` AND (v.registration_number ILIKE $${countParamCount} OR v.registered_owner_name ILIKE $${countParamCount} OR so.service_type ILIKE $${countParamCount})`;
+      countQuery += ` AND (v.registration_number ILIKE $${countParamCount} OR o.registered_owner_name ILIKE $${countParamCount} OR so.service_type ILIKE $${countParamCount})`;
       countParams.push(`%${search}%`);
     }
 
@@ -119,11 +125,12 @@ router.get('/orders/:id', authenticateToken, async (req, res) => {
 
     // Get service order details
     const orderQuery = `
-      SELECT so.*, v.registration_number, v.registered_owner_name,
+      SELECT so.*, v.registration_number, o.registered_owner_name,
              u.name as agent_name, v.makers_name, v.makers_classification,
              v.chassis_number, v.engine_number, v.fuel_used
       FROM service_orders so
       JOIN vehicles v ON so.vehicle_id = v.id
+      LEFT JOIN vehicle_owner_details o ON v.id = o.vehicle_id
       LEFT JOIN users u ON so.agent_id = u.id
       WHERE so.id = $1
     `;
@@ -169,7 +176,6 @@ router.get('/orders/:id', authenticateToken, async (req, res) => {
 // Create new service order
 router.post('/orders', authenticateToken, validateRequest(schemas.serviceOrder), async (req, res) => {
   const client = await pool.connect();
-  
   try {
     await client.query('BEGIN');
 
@@ -184,20 +190,59 @@ router.post('/orders', authenticateToken, validateRequest(schemas.serviceOrder),
       });
     }
 
+    // --- HPA/HPT business rule check ---
+    if (['hpa', 'hpt'].includes(serviceType.toLowerCase())) {
+      // Get ACTIVE hypothication record for this vehicle
+      const hypoResult = await client.query(
+        'SELECT is_hpa FROM hypothication_details WHERE vehicle_id = $1 AND status = \'ACTIVE\'',
+        [vehicleId]
+      );
+      if (hypoResult.rows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No active hypothication record found for this vehicle'
+        });
+      }
+      const isHpa = hypoResult.rows[0].is_hpa === true || hypoResult.rows[0].is_hpa === 'true';
+
+      if (serviceType.toLowerCase() === 'hpt' && !isHpa) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot create HPT order: HPA is not active for this vehicle'
+        });
+      }
+      if (serviceType.toLowerCase() === 'hpa' && isHpa) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot create HPA order: HPA is already active for this vehicle'
+        });
+      }
+    }
+    // --- end HPA/HPT business rule check ---
+
     // Calculate final amount after discount
     const amount = Number(actualAmount) - Number(discount);
 
     // Create service order
-    const orderQuery = `
+    const serviceOrderQuery = `
       INSERT INTO service_orders (
-        vehicle_id, service_type, actual_amount, amount, amount_paid, discount, customer_name, 
+        vehicle_id, service_type, actual_amount, amount, amount_paid, customer_name, 
         status, agent_id, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+      ) VALUES ($1, UPPER($2), $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
       RETURNING id
     `;
 
-    const orderValues = [vehicleId, serviceType, actualAmount, amount, 0, discount, customerName, 'pending', req.user.id];
-    const orderResult = await client.query(orderQuery, orderValues);
+    const orderValues = [
+      vehicleId,           // $1
+      serviceType,         // $2
+      actualAmount,        // $3
+      amount,              // $4
+      0,                   // $5 (amount_paid)
+      customerName,        // $6
+      'pending',           // $7 (status)
+      req.user.id          // $8 (agent_id)
+    ];
+    const orderResult = await client.query(serviceOrderQuery, orderValues);
     const serviceOrderId = orderResult.rows[0].id;
 
     // Create initial record in service_order_amounts table
@@ -241,10 +286,8 @@ router.patch('/orders/:id/status', authenticateToken, async (req, res) => {
       });
     }
 
-    const result = await pool.query(
-      'UPDATE service_orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id',
-      [status, id]
-    );
+    const updateStatusQuery = 'UPDATE service_orders SET status = UPPER($1), updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *';
+    const result = await pool.query(updateStatusQuery, [status, id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({
@@ -320,14 +363,6 @@ router.post('/orders/:id/payment', authenticateToken, async (req, res) => {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
     `, [id, order.vehicle_id, amount, order.actual_amount, order.discount, 'payment', req.user.id]);
 
-    // If fully paid, update status to completed
-    if (newAmountPaid >= totalAmount) {
-      await client.query(
-        'UPDATE service_orders SET status = $1 WHERE id = $2',
-        ['completed', id]
-      );
-    }
-
     await client.query('COMMIT');
 
     res.json({
@@ -345,6 +380,129 @@ router.post('/orders/:id/payment', authenticateToken, async (req, res) => {
       success: false,
       message: 'Internal server error'
     });
+  } finally {
+    client.release();
+  }
+});
+
+// Complete service order and create record in respective table
+router.patch('/orders/:id/complete', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { id } = req.params;
+    const { fromDate, toDate, number, serviceType } = req.body;
+
+    // Get order and vehicle info
+    const orderResult = await client.query('SELECT * FROM service_orders WHERE id = $1', [id]);
+    if (orderResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Service order not found' });
+    }
+    const order = orderResult.rows[0];
+
+    // Use serviceType from body if provided, else from DB
+    const typeToUse = (serviceType || order.service_type || '').toLowerCase();
+
+    console.log('Complete order: typeToUse=', typeToUse, 'number=', number, 'fromDate=', fromDate, 'toDate=', toDate);
+
+    // Update order status
+    await client.query('UPDATE service_orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['completed', id]);
+
+    // Prepare update and insert queries for the details table
+    let updateOldQuery = null;
+    let insertNewQuery = null;
+    let updateParams = null;
+    let insertParams = null;
+
+    switch (typeToUse) {
+      case 'fitness':
+        updateOldQuery = `UPDATE fitness_details SET status = 'INACTIVE' WHERE vehicle_id = $1 AND status = 'ACTIVE'`;
+        insertNewQuery = `INSERT INTO fitness_details (vehicle_id, fc_number, fc_tenure_from, fc_tenure_to, status, created_at) VALUES ($1, $2, $3, $4, 'ACTIVE', CURRENT_TIMESTAMP)`;
+        updateParams = [order.vehicle_id];
+        insertParams = [order.vehicle_id, number, fromDate, toDate];
+        break;
+      case 'insurance':
+        updateOldQuery = `UPDATE insurance_details SET status = 'INACTIVE' WHERE vehicle_id = $1 AND status = 'ACTIVE'`;
+        insertNewQuery = `INSERT INTO insurance_details (vehicle_id, policy_number, insurance_from, insurance_to, status, created_at) VALUES ($1, $2, $3, $4, 'ACTIVE', CURRENT_TIMESTAMP)`;
+        updateParams = [order.vehicle_id];
+        insertParams = [order.vehicle_id, number, fromDate, toDate];
+        break;
+      case 'permit':
+        updateOldQuery = `UPDATE permit_details SET status = 'INACTIVE' WHERE vehicle_id = $1 AND status = 'ACTIVE'`;
+        insertNewQuery = `INSERT INTO permit_details (vehicle_id, permit_number, permit_tenure_from, permit_tenure_to, status, created_at) VALUES ($1, $2, $3, $4, 'ACTIVE', CURRENT_TIMESTAMP)`;
+        updateParams = [order.vehicle_id];
+        insertParams = [order.vehicle_id, number, fromDate, toDate];
+        break;
+      case 'pollution':
+      case 'puc': // <-- Add this line
+        updateOldQuery = `UPDATE puc_details SET status = 'INACTIVE' WHERE vehicle_id = $1 AND status = 'ACTIVE'`;
+        insertNewQuery = `INSERT INTO puc_details (vehicle_id, puc_number, puc_from, puc_to, status, created_at) VALUES ($1, $2, $3, $4, 'ACTIVE', CURRENT_TIMESTAMP)`;
+        updateParams = [order.vehicle_id];
+        insertParams = [order.vehicle_id, number, fromDate, toDate];
+        break;
+      case 'tax':
+        updateOldQuery = `UPDATE tax_details SET status = 'INACTIVE' WHERE vehicle_id = $1 AND status = 'ACTIVE'`;
+        insertNewQuery = `INSERT INTO tax_details (vehicle_id, tax_number, tax_tenure_from, tax_tenure_to, status, created_at) VALUES ($1, $2, $3, $4, 'ACTIVE', CURRENT_TIMESTAMP)`;
+        updateParams = [order.vehicle_id];
+        insertParams = [order.vehicle_id, number, fromDate, toDate];
+        break;
+      case 'transfer':
+        // Set old owner details to INACTIVE
+        updateOldQuery = `UPDATE vehicle_owner_details SET status = 'INACTIVE' WHERE vehicle_id = $1 AND status = 'ACTIVE'`;
+        // Insert new owner details
+        insertNewQuery = `INSERT INTO vehicle_owner_details (vehicle_id, aadhar_number, mobile_number, registered_owner_name, guardian_info, address, status, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', CURRENT_TIMESTAMP)`;
+        updateParams = [order.vehicle_id];
+        // Get these from req.body.transferDetails or similar
+        const { aadharNumber, mobileNumber, registeredOwnerName, guardianInfo, address } = req.body.transferDetails || req.body;
+        insertParams = [order.vehicle_id, aadharNumber, mobileNumber, registeredOwnerName, guardianInfo, address];
+        break;
+      case 'hpt':
+        // Set old hypothication record to INACTIVE
+        await client.query(
+          `UPDATE hypothication_details SET status = 'INACTIVE', updated_at = CURRENT_TIMESTAMP WHERE vehicle_id = $1 AND status = 'ACTIVE'`,
+          [order.vehicle_id]
+        );
+        // Insert new hypothication record with is_hpa = false and status ACTIVE
+        await client.query(
+          `INSERT INTO hypothication_details (vehicle_id, is_hpa, status, created_at, updated_at)
+           VALUES ($1, $2, 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          [order.vehicle_id, false]
+        );
+        break;
+      case 'hpa':
+        // Set old hypothication record to INACTIVE
+        await client.query(
+          `UPDATE hypothication_details SET status = 'INACTIVE', updated_at = CURRENT_TIMESTAMP WHERE vehicle_id = $1 AND status = 'ACTIVE'`,
+          [order.vehicle_id]
+        );
+        // Insert new hypothication record with is_hpa = true and status ACTIVE
+        const { hypothicatedTo } = req.body;
+        await client.query(
+          `INSERT INTO hypothication_details (vehicle_id, is_hpa, hypothicated_to, status, created_at, updated_at)
+           VALUES ($1, $2, $3, 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          [order.vehicle_id, true, hypothicatedTo]
+        );
+        break;
+      default:
+        break;
+    }
+
+    if (updateOldQuery) {
+      const updateResult = await client.query(updateOldQuery, updateParams);
+      console.log('Old records set to INACTIVE:', updateResult.rowCount);
+    }
+    if (insertNewQuery) {
+      const insertResult = await client.query(insertNewQuery, insertParams);
+      console.log('Inserted new record:', insertResult.rowCount);
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Order completed and record created' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Complete order error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error', error: error.message });
   } finally {
     client.release();
   }

@@ -231,6 +231,32 @@ export const servicesAPI = {
       method: 'POST',
       body: JSON.stringify({ amount }),
     });
+  },
+
+  completeOrder: async (
+    id: string,
+    fromDate?: string,
+    toDate?: string,
+    number?: string,
+    serviceType?: string,
+    transferDetails?: {
+      aadharNumber: string;
+      mobileNumber: string;
+      registeredOwnerName: string;
+      guardianInfo: string;
+      address: string;
+    }
+  ) => {
+    return await apiRequest(`/services/orders/${id}/complete`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        fromDate,
+        toDate,
+        number,
+        serviceType,
+        ...(transferDetails || {})
+      }),
+    });
   }
 };
 
