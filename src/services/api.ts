@@ -458,3 +458,46 @@ export const reportsAPI = {
     return await apiRequest(`/reports/appointments/summary${queryString ? `?${queryString}` : ''}`);
   }
 };
+
+// Users API
+export const usersAPI = {
+  getAll: async (params: { page?: number; limit?: number; search?: string } = {}) => {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        queryParams.append(key, value.toString());
+      }
+    });
+    
+    const queryString = queryParams.toString();
+    return await apiRequest(`/users${queryString ? `?${queryString}` : ''}`);
+  },
+
+  getById: async (id: string) => {
+    return await apiRequest(`/users/${id}`);
+  },
+
+  create: async (userData: any) => {
+    return await apiRequest('/users', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+  },
+
+  update: async (id: string, userData: any) => {
+    return await apiRequest(`/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(userData),
+    });
+  },
+
+  delete: async (id: string) => {
+    return await apiRequest(`/users/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  getRoles: async () => {
+    return await apiRequest('/users/roles/list');
+  }
+};

@@ -11,6 +11,7 @@ import ServiceOrders from './pages/ServiceOrders';
 import VehicleDetails from './pages/VehicleDetails';
 import RenewalDues from './pages/RenewalDues';
 import Reports from './pages/Reports';
+import Users from './pages/Users';
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
           <Route path="/service-orders" element={<ServiceOrders />} />
           <Route path="/renewal-dues" element={<RenewalDues />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="/users" element={<Users />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
