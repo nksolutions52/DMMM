@@ -3,6 +3,8 @@ import MainLayout from '../components/layout/MainLayout';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
+import LoadingSpinner from '../components/ui/LoadingSpinner';
+import ErrorMessage from '../components/ui/ErrorMessage';
 import { 
   FileText, 
   Download, 
@@ -24,8 +26,12 @@ import {
   X,
   Wrench,
   DollarSign,
-  Shield
+  Shield,
+  Filter,
+  RefreshCw
 } from 'lucide-react';
+import { useApi, useApiMutation } from '../hooks/useApi';
+import { reportsAPI } from '../services/api';
 
 interface ReportCard {
   id: string;
@@ -34,6 +40,7 @@ interface ReportCard {
   icon: React.ReactNode;
   category: string;
   color: string;
+  endpoint: string;
 }
 
 interface ReportData {
@@ -50,17 +57,22 @@ const Reports: React.FC = () => {
   });
   const [showReportTable, setShowReportTable] = useState(false);
   const [currentReport, setCurrentReport] = useState<ReportCard | null>(null);
-  const [reportData, setReportData] = useState<ReportData[]>([]);
+  const [reportData, setReportData] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+  const [reportFilters, setReportFilters] = useState<any>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const { mutate: generateReport } = useApiMutation();
 
   const reportCategories = [
-    { id: 'all', name: 'All Reports', count: 24 },
-    { id: 'vehicle', name: 'Vehicle Reports', count: 8 },
-    { id: 'service', name: 'Service Reports', count: 6 },
-    { id: 'revenue', name: 'Revenue Reports', count: 5 },
-    { id: 'compliance', name: 'Compliance Reports', count: 3 },
-    { id: 'operational', name: 'Operational Reports', count: 2 }
+    { id: 'all', name: 'All Reports', count: 12 },
+    { id: 'vehicle', name: 'Vehicle Reports', count: 4 },
+    { id: 'service', name: 'Service Reports', count: 3 },
+    { id: 'revenue', name: 'Revenue Reports', count: 2 },
+    { id: 'compliance', name: 'Compliance Reports', count: 2 },
+    { id: 'operational', name: 'Operational Reports', count: 1 }
   ];
 
   const reports: ReportCard[] = [
@@ -68,209 +80,125 @@ const Reports: React.FC = () => {
     {
       id: 'vehicle-registration',
       title: 'Vehicle Registration Report',
-      description: 'Complete list of all registered vehicles with details',
+      description: 'Complete list of all registered vehicles with owner details and registration information',
       icon: <Car className="h-5 w-5 sm:h-6 sm:w-6" />,
       category: 'vehicle',
-      color: 'bg-blue-500'
+      color: 'bg-blue-500',
+      endpoint: '/vehicles/registration'
     },
     {
       id: 'vehicle-by-type',
       title: 'Vehicles by Type Report',
-      description: 'Breakdown of vehicles by Transport/Non-Transport categories',
+      description: 'Breakdown of vehicles by Transport/Non-Transport categories with fuel type analysis',
       icon: <PieChart className="h-5 w-5 sm:h-6 sm:w-6" />,
       category: 'vehicle',
-      color: 'bg-green-500'
-    },
-    {
-      id: 'vehicle-by-fuel',
-      title: 'Vehicles by Fuel Type',
-      description: 'Distribution of vehicles by fuel type (Petrol, Diesel, CNG, etc.)',
-      icon: <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6" />,
-      category: 'vehicle',
-      color: 'bg-purple-500'
+      color: 'bg-green-500',
+      endpoint: '/vehicles/by-type'
     },
     {
       id: 'vehicle-by-manufacturer',
       title: 'Vehicles by Manufacturer',
-      description: 'Vehicle count grouped by manufacturer brands',
+      description: 'Vehicle count grouped by manufacturer brands with market share analysis',
+      icon: <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6" />,
+      category: 'vehicle',
+      color: 'bg-purple-500',
+      endpoint: '/vehicles/by-manufacturer'
+    },
+    {
+      id: 'monthly-trends',
+      title: 'Monthly Registration Trends',
+      description: 'Monthly vehicle registration trends with revenue correlation analysis',
       icon: <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6" />,
       category: 'vehicle',
-      color: 'bg-indigo-500'
-    },
-    {
-      id: 'vehicle-age-analysis',
-      title: 'Vehicle Age Analysis',
-      description: 'Analysis of vehicle fleet by manufacturing year',
-      icon: <Clock className="h-5 w-5 sm:h-6 sm:w-6" />,
-      category: 'vehicle',
-      color: 'bg-orange-500'
-    },
-    {
-      id: 'new-registrations',
-      title: 'New Registrations Report',
-      description: 'Recently registered vehicles within specified date range',
-      icon: <FileText className="h-5 w-5 sm:h-6 sm:w-6" />,
-      category: 'vehicle',
-      color: 'bg-cyan-500'
-    },
-    {
-      id: 'vehicle-ownership-transfer',
-      title: 'Ownership Transfer Report',
-      description: 'List of vehicles with ownership transfer records',
-      icon: <Users className="h-5 w-5 sm:h-6 sm:w-6" />,
-      category: 'vehicle',
-      color: 'bg-pink-500'
-    },
-    {
-      id: 'hypothecated-vehicles',
-      title: 'Hypothecated Vehicles Report',
-      description: 'Vehicles with active loan/hypothecation details',
-      icon: <FileBarChart className="h-5 w-5 sm:h-6 sm:w-6" />,
-      category: 'vehicle',
-      color: 'bg-teal-500'
+      color: 'bg-indigo-500',
+      endpoint: '/trends/monthly'
     },
 
     // Service Reports
     {
       id: 'service-orders-summary',
       title: 'Service Orders Summary',
-      description: 'Complete overview of all service orders and their status',
-      icon: <FileText className="h-5 w-5 sm:h-6 sm:w-6" />,
+      description: 'Complete overview of all service orders with status tracking and revenue analysis',
+      icon: <Wrench className="h-5 w-5 sm:h-6 sm:w-6" />,
       category: 'service',
-      color: 'bg-blue-600'
+      color: 'bg-blue-600',
+      endpoint: '/services/summary'
     },
     {
-      id: 'service-by-type',
-      title: 'Services by Type Report',
-      description: 'Breakdown of services by type (Transfer, Fitness, Insurance, etc.)',
-      icon: <PieChart className="h-5 w-5 sm:h-6 sm:w-6" />,
-      category: 'service',
-      color: 'bg-green-600'
-    },
-    {
-      id: 'pending-services',
-      title: 'Pending Services Report',
-      description: 'List of all pending service orders requiring attention',
-      icon: <Clock className="h-5 w-5 sm:h-6 sm:w-6" />,
-      category: 'service',
-      color: 'bg-yellow-600'
-    },
-    {
-      id: 'completed-services',
-      title: 'Completed Services Report',
-      description: 'Successfully completed service orders within date range',
-      icon: <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6" />,
-      category: 'service',
-      color: 'bg-green-700'
-    },
-    {
-      id: 'service-agent-performance',
+      id: 'agent-performance',
       title: 'Agent Performance Report',
-      description: 'Service completion statistics by agent',
-      icon: <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6" />,
+      description: 'Service completion statistics and performance metrics by agent',
+      icon: <Users className="h-5 w-5 sm:h-6 sm:w-6" />,
       category: 'service',
-      color: 'bg-purple-600'
+      color: 'bg-purple-600',
+      endpoint: '/agents/performance'
     },
     {
-      id: 'service-turnaround-time',
-      title: 'Service Turnaround Time',
-      description: 'Average time taken to complete different types of services',
-      icon: <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6" />,
+      id: 'appointment-summary',
+      title: 'Appointment Summary',
+      description: 'Overview of scheduled and completed appointments with efficiency metrics',
+      icon: <Calendar className="h-5 w-5 sm:h-6 sm:w-6" />,
       category: 'service',
-      color: 'bg-indigo-600'
+      color: 'bg-blue-700',
+      endpoint: '/appointments/summary'
     },
 
     // Revenue Reports
     {
       id: 'daily-revenue',
       title: 'Daily Revenue Report',
-      description: 'Day-wise revenue collection from all services',
+      description: 'Day-wise revenue collection from all services with detailed breakdown',
       icon: <IndianRupee className="h-5 w-5 sm:h-6 sm:w-6" />,
       category: 'revenue',
-      color: 'bg-emerald-600'
+      color: 'bg-emerald-600',
+      endpoint: '/revenue/daily'
     },
     {
-      id: 'monthly-revenue',
-      title: 'Monthly Revenue Report',
-      description: 'Month-wise revenue analysis and trends',
+      id: 'revenue-trends',
+      title: 'Revenue Trends Analysis',
+      description: 'Revenue analysis with trends, forecasting and service-wise breakdown',
       icon: <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6" />,
       category: 'revenue',
-      color: 'bg-green-800'
-    },
-    {
-      id: 'revenue-by-service',
-      title: 'Revenue by Service Type',
-      description: 'Revenue breakdown by different service categories',
-      icon: <PieChart className="h-5 w-5 sm:h-6 sm:w-6" />,
-      category: 'revenue',
-      color: 'bg-teal-600'
-    },
-    {
-      id: 'payment-status',
-      title: 'Payment Status Report',
-      description: 'Outstanding payments and collection status',
-      icon: <FileBarChart className="h-5 w-5 sm:h-6 sm:w-6" />,
-      category: 'revenue',
-      color: 'bg-orange-600'
-    },
-    {
-      id: 'revenue-forecast',
-      title: 'Revenue Forecast Report',
-      description: 'Projected revenue based on historical data and trends',
-      icon: <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6" />,
-      category: 'revenue',
-      color: 'bg-purple-700'
+      color: 'bg-green-800',
+      endpoint: '/revenue/trends'
     },
 
     // Compliance Reports
     {
       id: 'renewal-dues',
       title: 'Renewal Dues Report',
-      description: 'Upcoming and overdue renewals (Insurance, Tax, FC, Permit)',
+      description: 'Upcoming and overdue renewals (Insurance, Tax, FC, Permit, PUC) with urgency levels',
       icon: <AlertTriangle className="h-5 w-5 sm:h-6 sm:w-6" />,
       category: 'compliance',
-      color:  'bg-red-600'
+      color: 'bg-red-600',
+      endpoint: '/renewals/dues'
     },
     {
-      id: 'expired-documents',
-      title: 'Expired Documents Report',
-      description: 'Vehicles with expired PUC, Insurance, or other documents',
-      icon: <FileText className="h-5 w-5 sm:h-6 sm:w-6" />,
+      id: 'compliance-status',
+      title: 'Compliance Status Report',
+      description: 'Overall compliance status of vehicles with document expiry tracking',
+      icon: <Shield className="h-5 w-5 sm:h-6 sm:w-6" />,
       category: 'compliance',
-      color: 'bg-red-700'
-    },
-    {
-      id: 'fitness-due',
-      title: 'Fitness Certificate Due',
-      description: 'Commercial vehicles due for fitness certificate renewal',
-      icon: <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6" />,
-      category: 'compliance',
-      color: 'bg-yellow-700'
+      color: 'bg-red-700',
+      endpoint: '/compliance/status'
     },
 
     // Operational Reports
     {
-      id: 'appointment-summary',
-      title: 'Appointment Summary',
-      description: 'Overview of scheduled and completed appointments',
-      icon: <Calendar className="h-5 w-5 sm:h-6 sm:w-6" />,
-      category: 'operational',
-      color: 'bg-blue-700'
-    },
-    {
       id: 'system-usage',
       title: 'System Usage Report',
-      description: 'User activity and system utilization statistics',
+      description: 'User activity and system utilization statistics with performance metrics',
       icon: <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6" />,
       category: 'operational',
-      color: 'bg-gray-600'
+      color: 'bg-gray-600',
+      endpoint: '/system/usage'
     }
   ];
 
   const quickStats = [
     {
       id: 'vehicles',
-      value: 120,
+      value: '1,256',
       label: 'Total Vehicles',
       icon: <Car size={24} className="sm:w-7 sm:h-7" />,
       color: '#2563eb',
@@ -278,7 +206,7 @@ const Reports: React.FC = () => {
     },
     {
       id: 'services',
-      value: 45,
+      value: '342',
       label: 'Services Done',
       icon: <Wrench size={24} className="sm:w-7 sm:h-7" />,
       color: '#059669',
@@ -286,15 +214,15 @@ const Reports: React.FC = () => {
     },
     {
       id: 'revenue',
-      value: '₹250000',
-      label: 'Revenue',
+      value: '₹2.5L',
+      label: 'Total Revenue',
       icon: <DollarSign size={24} className="sm:w-7 sm:h-7" />,
       color: '#f59e42',
       bgColor: '#fef3c7',
     },
     {
       id: 'compliance',
-      value: 8,
+      value: '23',
       label: 'Renewal Dues',
       icon: <Shield size={24} className="sm:w-7 sm:h-7" />,
       color: '#7c3aed',
@@ -309,126 +237,277 @@ const Reports: React.FC = () => {
     return matchesCategory && matchesSearch;
   });
 
-  // Mock data generator for different report types
-  const generateMockData = (reportId: string): ReportData[] => {
-    switch (reportId) {
-      case 'vehicle-registration':
-        return Array.from({ length: 50 }, (_, i) => ({
-          id: `VEH${String(i + 1).padStart(3, '0')}`,
-          registrationNumber: `KA01MJ${2020 + (i % 4)}${String(i + 1).padStart(3, '0')}`,
-          ownerName: `Owner ${i + 1}`,
-          vehicleType: i % 2 === 0 ? 'Transport' : 'Non Transport',
-          manufacturer: ['Maruti Suzuki', 'Hyundai', 'Tata Motors', 'Mahindra'][i % 4],
-          model: ['Swift', 'Creta', 'Harrier', 'Bolero'][i % 4],
-          registrationDate: `2024-0${(i % 9) + 1}-${String((i % 28) + 1).padStart(2, '0')}`,
-          status: 'Active'
-        }));
-
-      case 'service-orders-summary':
-        return Array.from({ length: 35 }, (_, i) => ({
-          id: `SO${String(i + 1).padStart(3, '0')}`,
-          vehicleNumber: `KA01MJ${2020 + (i % 4)}${String(i + 1).padStart(3, '0')}`,
-          serviceType: ['Transfer of Ownership', 'Fitness', 'Insurance Renewal', 'Tax Payment'][i % 4],
-          customerName: `Customer ${i + 1}`,
-          amount: `₹${(1000 + (i * 100))}`,
-          status: ['Pending', 'Completed', 'In Progress'][i % 3],
-          createdDate: `2024-0${(i % 9) + 1}-${String((i % 28) + 1).padStart(2, '0')}`,
-          agentName: `Agent ${(i % 3) + 1}`
-        }));
-
-      case 'daily-revenue':
-        return Array.from({ length: 30 }, (_, i) => ({
-          id: `REV${String(i + 1).padStart(3, '0')}`,
-          date: `2024-03-${String(i + 1).padStart(2, '0')}`,
-          totalOrders: Math.floor(Math.random() * 20) + 5,
-          totalRevenue: `₹${(Math.floor(Math.random() * 50000) + 10000).toLocaleString()}`,
-          transferRevenue: `₹${(Math.floor(Math.random() * 20000) + 5000).toLocaleString()}`,
-          fitnessRevenue: `₹${(Math.floor(Math.random() * 15000) + 3000).toLocaleString()}`,
-          insuranceRevenue: `₹${(Math.floor(Math.random() * 10000) + 2000).toLocaleString()}`,
-          taxRevenue: `₹${(Math.floor(Math.random() * 8000) + 1000).toLocaleString()}`
-        }));
-
-      case 'renewal-dues':
-        return Array.from({ length: 25 }, (_, i) => ({
-          id: `REN${String(i + 1).padStart(3, '0')}`,
-          vehicleNumber: `KA01MJ${2020 + (i % 4)}${String(i + 1).padStart(3, '0')}`,
-          ownerName: `Owner ${i + 1}`,
-          renewalType: ['Insurance', 'Tax', 'FC', 'Permit'][i % 4],
-          dueDate: `2024-0${(i % 9) + 1}-${String((i % 28) + 1).padStart(2, '0')}`,
-          daysLeft: Math.floor(Math.random() * 60) - 30,
-          amount: `₹${(500 + (i * 50))}`,
-          status: Math.random() > 0.7 ? 'Overdue' : 'Upcoming'
-        }));
-
-      default:
-        return Array.from({ length: 20 }, (_, i) => ({
-          id: `GEN${String(i + 1).padStart(3, '0')}`,
-          item: `Item ${i + 1}`,
-          description: `Description for item ${i + 1}`,
-          value: `Value ${i + 1}`,
-          date: `2024-0${(i % 9) + 1}-${String((i % 28) + 1).padStart(2, '0')}`,
-          status: ['Active', 'Inactive', 'Pending'][i % 3]
-        }));
-    }
-  };
-
-  const handleGenerateReport = (report: ReportCard) => {
+  const handleGenerateReport = async (report: ReportCard) => {
+    setLoading(true);
+    setError(null);
     setCurrentReport(report);
-    const data = generateMockData(report.id);
-    setReportData(data);
-    setCurrentPage(1);
-    setShowReportTable(true);
+    
+    try {
+      const filters = {
+        ...reportFilters,
+        startDate: dateRange.from,
+        endDate: dateRange.to,
+        page: 1,
+        limit: 50
+      };
+
+      let data;
+      switch (report.id) {
+        case 'vehicle-registration':
+          data = await generateReport(() => reportsAPI.getVehicleRegistration(filters));
+          break;
+        case 'service-orders-summary':
+          data = await generateReport(() => reportsAPI.getServicesSummary(filters));
+          break;
+        case 'daily-revenue':
+          data = await generateReport(() => reportsAPI.getDailyRevenue(filters));
+          break;
+        case 'renewal-dues':
+          data = await generateReport(() => reportsAPI.getRenewalDues(filters));
+          break;
+        case 'vehicle-by-type':
+          data = await generateReport(() => reportsAPI.getVehiclesByType());
+          break;
+        case 'vehicle-by-manufacturer':
+          data = await generateReport(() => reportsAPI.getVehiclesByManufacturer());
+          break;
+        case 'appointment-summary':
+          data = await generateReport(() => reportsAPI.getAppointmentsSummary(filters));
+          break;
+        default:
+          throw new Error('Report type not implemented');
+      }
+      
+      setReportData(data.data);
+      setCurrentPage(1);
+      setShowReportTable(true);
+    } catch (error: any) {
+      setError(error.message || 'Failed to generate report');
+      console.error('Report generation failed:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCloseReport = () => {
     setShowReportTable(false);
     setCurrentReport(null);
-    setReportData([]);
+    setReportData(null);
     setCurrentPage(1);
+    setError(null);
   };
 
-  // Pagination logic
-  const totalPages = Math.ceil(reportData.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const currentData = reportData.slice(startIndex, endIndex);
-
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
-  };
-
-  const renderTableHeaders = () => {
-    if (!currentData.length) return null;
+  const handleExportReport = async (format: 'csv' | 'pdf') => {
+    if (!currentReport) return;
     
-    const headers = Object.keys(currentData[0]).filter(key => key !== 'id');
-    return headers.map(header => (
-      <th key={header} className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-        {header.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-      </th>
-    ));
+    try {
+      // This would trigger the export functionality
+      const exportData = await generateReport(() => 
+        reportsAPI.exportReport(currentReport.id, format)
+      );
+      
+      // Handle the download
+      alert(`${format.toUpperCase()} export will be downloaded`);
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Export failed. Please try again.');
+    }
   };
 
-  const renderTableRows = () => {
-    return currentData.map((row, index) => (
-      <tr key={row.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-        {Object.entries(row).filter(([key]) => key !== 'id').map(([key, value]) => (
-          <td key={key} className="px-4 sm:px-6 py-4 text-sm text-gray-900 break-words">
-            {key === 'status' ? (
-              <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                value === 'Active' || value === 'Completed' ? 'bg-green-100 text-green-800' :
-                value === 'Pending' || value === 'Upcoming' ? 'bg-yellow-100 text-yellow-800' :
-                value === 'Overdue' || value === 'Inactive' ? 'bg-red-100 text-red-800' :
-                'bg-blue-100 text-blue-800'
-              }`}>
-                {value}
-              </span>
-            ) : (
-              value
-            )}
-          </td>
-        ))}
-      </tr>
-    ));
+  const renderReportContent = () => {
+    if (!reportData) return null;
+
+    // Handle different report types
+    if (currentReport?.id === 'vehicle-registration' && reportData.vehicles) {
+      return (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Registration No</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Owner Name</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vehicle Type</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Manufacturer</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Registration Date</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mobile</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {reportData.vehicles.map((vehicle: any, index: number) => (
+                <tr key={vehicle.id || index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <td className="px-4 sm:px-6 py-4 text-sm font-medium text-gray-900">{vehicle.registration_number}</td>
+                  <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">{vehicle.registered_owner_name}</td>
+                  <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">{vehicle.type}</td>
+                  <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">{vehicle.makers_name}</td>
+                  <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">{new Date(vehicle.date_of_registration).toLocaleDateString()}</td>
+                  <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">{vehicle.mobile_number}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    if (currentReport?.id === 'service-orders-summary' && reportData.serviceOrders) {
+      return (
+        <div>
+          {/* Statistics Cards */}
+          {reportData.statistics && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <div className="text-2xl font-bold text-blue-600">{reportData.statistics.total_orders}</div>
+                <div className="text-sm text-gray-600">Total Orders</div>
+              </div>
+              <div className="bg-green-50 p-4 rounded-lg">
+                <div className="text-2xl font-bold text-green-600">₹{Number(reportData.statistics.total_revenue || 0).toLocaleString()}</div>
+                <div className="text-sm text-gray-600">Total Revenue</div>
+              </div>
+              <div className="bg-yellow-50 p-4 rounded-lg">
+                <div className="text-2xl font-bold text-yellow-600">{reportData.statistics.pending_orders}</div>
+                <div className="text-sm text-gray-600">Pending Orders</div>
+              </div>
+              <div className="bg-purple-50 p-4 rounded-lg">
+                <div className="text-2xl font-bold text-purple-600">{reportData.statistics.completed_orders}</div>
+                <div className="text-sm text-gray-600">Completed Orders</div>
+              </div>
+            </div>
+          )}
+          
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order ID</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vehicle</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Service Type</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {reportData.serviceOrders.map((order: any, index: number) => (
+                  <tr key={order.id || index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-4 sm:px-6 py-4 text-sm font-medium text-gray-900">#{order.id}</td>
+                    <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">{order.registration_number}</td>
+                    <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">{order.service_type}</td>
+                    <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">{order.customer_name}</td>
+                    <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">₹{order.amount}</td>
+                    <td className="px-4 sm:px-6 py-4">
+                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                        order.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                        order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {order.status}
+                      </span>
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">{order.agent_name}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    if (currentReport?.id === 'daily-revenue' && reportData.dailyRevenue) {
+      return (
+        <div>
+          {/* Summary Cards */}
+          {reportData.summary && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <div className="bg-green-50 p-4 rounded-lg">
+                <div className="text-2xl font-bold text-green-600">₹{Number(reportData.summary.grand_total || 0).toLocaleString()}</div>
+                <div className="text-sm text-gray-600">Total Revenue</div>
+              </div>
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <div className="text-2xl font-bold text-blue-600">₹{Number(reportData.summary.total_collected || 0).toLocaleString()}</div>
+                <div className="text-sm text-gray-600">Collected</div>
+              </div>
+              <div className="bg-yellow-50 p-4 rounded-lg">
+                <div className="text-2xl font-bold text-yellow-600">₹{Number(reportData.summary.total_pending || 0).toLocaleString()}</div>
+                <div className="text-sm text-gray-600">Pending</div>
+              </div>
+              <div className="bg-purple-50 p-4 rounded-lg">
+                <div className="text-2xl font-bold text-purple-600">{reportData.summary.total_orders}</div>
+                <div className="text-sm text-gray-600">Total Orders</div>
+              </div>
+            </div>
+          )}
+          
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Orders</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Revenue</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collected</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Transfer</th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fitness</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {reportData.dailyRevenue.map((day: any, index: number) => (
+                  <tr key={day.date || index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-4 sm:px-6 py-4 text-sm font-medium text-gray-900">{new Date(day.date).toLocaleDateString()}</td>
+                    <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">{day.total_orders}</td>
+                    <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">₹{Number(day.total_revenue || 0).toLocaleString()}</td>
+                    <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">₹{Number(day.collected_revenue || 0).toLocaleString()}</td>
+                    <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">₹{Number(day.pending_revenue || 0).toLocaleString()}</td>
+                    <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">₹{Number(day.transfer_revenue || 0).toLocaleString()}</td>
+                    <td className="px-4 sm:px-6 py-4 text-sm text-gray-900">₹{Number(day.fitness_revenue || 0).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // Generic table renderer for other report types
+    if (Array.isArray(reportData)) {
+      if (reportData.length === 0) {
+        return <div className="text-center py-8 text-gray-500">No data available for this report.</div>;
+      }
+
+      const headers = Object.keys(reportData[0]).filter(key => key !== 'id');
+      
+      return (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                {headers.map(header => (
+                  <th key={header} className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {header.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {reportData.map((row: any, index: number) => (
+                <tr key={row.id || index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  {headers.map(header => (
+                    <td key={header} className="px-4 sm:px-6 py-4 text-sm text-gray-900 break-words">
+                      {row[header] || '-'}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    return <div className="text-center py-8 text-gray-500">No data available for this report.</div>;
   };
 
   if (showReportTable && currentReport) {
@@ -442,11 +521,16 @@ const Reports: React.FC = () => {
             >
               <X size={20} className="text-gray-600" />
             </button>
+            <div>
+              <h1 className="text-xl font-bold text-gray-800">{currentReport.title}</h1>
+              <p className="text-sm text-gray-600">Generated on: {new Date().toLocaleDateString()}</p>
+            </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
             <Button
               variant="outline"
               leftIcon={<Download size={18} />}
+              onClick={() => handleExportReport('csv')}
               className="w-full sm:w-auto"
             >
               Export CSV
@@ -454,79 +538,31 @@ const Reports: React.FC = () => {
             <Button
               variant="outline"
               leftIcon={<Download size={18} />}
+              onClick={() => handleExportReport('pdf')}
               className="w-full sm:w-auto"
             >
               Export PDF
+            </Button>
+            <Button
+              variant="outline"
+              leftIcon={<RefreshCw size={18} />}
+              onClick={() => handleGenerateReport(currentReport)}
+              className="w-full sm:w-auto"
+              isLoading={loading}
+            >
+              Refresh
             </Button>
           </div>
         </div>
 
         <Card>
-          <div className="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-            <div className="text-sm text-gray-600">
-              Showing {startIndex + 1} to {Math.min(endIndex, reportData.length)} of {reportData.length} entries
-            </div>
-            <div className="text-sm text-gray-600">
-              Generated on: {new Date().toLocaleDateString()}
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  {renderTableHeaders()}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {renderTableRows()}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center">
-              <span className="text-sm text-gray-700">
-                Page {currentPage} of {totalPages}
-              </span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                leftIcon={<ChevronLeft size={16} />}
-              >
-                Previous
-              </Button>
-              
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i;
-                return (
-                  <Button
-                    key={pageNum}
-                    variant={currentPage === pageNum ? 'primary' : 'outline'}
-                    size="sm"
-                    onClick={() => handlePageChange(pageNum)}
-                  >
-                    {pageNum}
-                  </Button>
-                );
-              })}
-              
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                rightIcon={<ChevronRight size={16} />}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          {loading ? (
+            <LoadingSpinner size="lg" text="Generating report..." className="h-64" />
+          ) : error ? (
+            <ErrorMessage message={error} onRetry={() => handleGenerateReport(currentReport)} />
+          ) : (
+            renderReportContent()
+          )}
         </Card>
       </MainLayout>
     );
@@ -560,25 +596,16 @@ const Reports: React.FC = () => {
 
       {/* Filters and Search */}
       <Card className="mb-6">
-        <div className="flex flex-col xl:flex-row gap-4 xl:items-center">
+        <div className="flex flex-col xl:flex-row gap-4 xl:items-end">
           <div className="flex-1">
-            <div className="flex flex-wrap gap-2">
-              <button
-                className={`px-3 sm:px-4 py-2 rounded font-semibold border border-gray-300 bg-white hover:bg-blue-50 transition text-sm`}
-              >
-                Monthly
-              </button>
-              <button
-                className={`px-3 sm:px-4 py-2 rounded font-semibold border border-gray-300 bg-white hover:bg-blue-50 transition text-sm`}
-              >
-                Quarterly
-              </button>
-              <button
-                className={`px-3 sm:px-4 py-2 rounded font-semibold border border-gray-300 bg-white hover:bg-blue-50 transition text-sm`}
-              >
-                Yearly
-              </button>
-            </div>
+            <Input
+              label="Search Reports"
+              placeholder="Search by report name or description..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              leftIcon={<Search size={18} />}
+              fullWidth
+            />
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
             <Input
@@ -628,7 +655,7 @@ const Reports: React.FC = () => {
 
         {/* Reports Grid */}
         <div className="xl:col-span-3">
-          <div className="max-h-[500px] overflow-y-auto">
+          <div className="max-h-[600px] overflow-y-auto">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3 gap-4 sm:gap-6">
               {filteredReports.map((report) => (
                 <div
@@ -647,12 +674,13 @@ const Reports: React.FC = () => {
                   </div>
                   <p className="text-gray-600 text-xs sm:text-sm flex-1 mb-4">{report.description}</p>
                   <div className="flex justify-end">
-                    <button
-                      className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold shadow hover:bg-blue-700 transition text-sm"
+                    <Button
                       onClick={() => handleGenerateReport(report)}
+                      className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold shadow hover:bg-blue-700 transition text-sm"
+                      isLoading={loading && currentReport?.id === report.id}
                     >
                       Generate
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}

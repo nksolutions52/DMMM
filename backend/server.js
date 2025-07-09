@@ -10,9 +10,9 @@ const vehicleRoutes = require('./routes/vehicles');
 const serviceRoutes = require('./routes/services');
 const appointmentRoutes = require('./routes/appointments');
 const renewalRoutes = require('./routes/renewals');
-const reportRoutes = require('./routes/reports');
 const dashboardRoutes = require('./routes/dashboard');
 const userRoutes = require('./routes/users');
+const reportRoutes = require('./routes/reports');
 
 const app = express();
 const PORT = process.env.PORT || 5000;

@@ -456,6 +456,34 @@ export const reportsAPI = {
     
     const queryString = queryParams.toString();
     return await apiRequest(`/reports/appointments/summary${queryString ? `?${queryString}` : ''}`);
+  },
+
+  getAgentPerformance: async (params: any = {}) => {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        queryParams.append(key, value.toString());
+      }
+    });
+    
+    const queryString = queryParams.toString();
+    return await apiRequest(`/reports/agents/performance${queryString ? `?${queryString}` : ''}`);
+  },
+
+  getMonthlyTrends: async (params: any = {}) => {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        queryParams.append(key, value.toString());
+      }
+    });
+    
+    const queryString = queryParams.toString();
+    return await apiRequest(`/reports/trends/monthly${queryString ? `?${queryString}` : ''}`);
+  },
+
+  exportReport: async (reportType: string, format: string) => {
+    return await apiRequest(`/reports/export/${reportType}?format=${format}`);
   }
 };
 
