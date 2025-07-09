@@ -4,12 +4,12 @@ import { Car, BarChart2, FileText, Users, Settings, LogOut, Calendar, Wrench, Cl
 import { useAuth } from '../../context/AuthContext';
 
 const Sidebar: React.FC = () => {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const navItems = [
+  const allNavItems = [
     { name: 'Dashboard', path: '/dashboard', icon: <BarChart2 size={20} /> },
     { name: 'Vehicles', path: '/vehicles', icon: <Car size={20} /> },
     { name: 'Services', path: '/services', icon: <Wrench size={20} /> },
@@ -20,6 +20,17 @@ const Sidebar: React.FC = () => {
     { name: 'Users', path: '/users', icon: <Users size={20} /> },
     { name: 'Settings', path: '/settings', icon: <Settings size={20} /> },
   ];
+
+  // Filter navigation items based on user role
+  const navItems = allNavItems.filter(item => {
+    if (user?.role === 'admin') {
+      return true; // Admin can see all items
+    }
+    
+    // Agent cannot see Users, Reports, and Settings
+    const restrictedPaths = ['/users', '/reports', '/settings'];
+    return !restrictedPaths.includes(item.path);
+  });
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
