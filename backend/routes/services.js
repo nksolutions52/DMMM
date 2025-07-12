@@ -536,7 +536,7 @@ router.patch('/orders/:id/complete-with-documents', authenticateToken, uploadDoc
     if (req.files && req.files.service_documents) {
       const documentType = typeToUse; // Use service type as document type
       
-      // Set existing documents to INACTIVE
+      // Set existing documents to INACTIVE for this document type
       await client.query(
         'UPDATE vehicle_documents SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE vehicle_id = $2 AND document_type = $3 AND status = $4',
         ['INACTIVE', order.vehicle_id, documentType, 'ACTIVE']

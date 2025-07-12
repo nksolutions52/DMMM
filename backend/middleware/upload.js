@@ -9,7 +9,7 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // Create subdirectories for different document types
-const documentTypes = ['puc', 'insurance', 'fitness', 'permit', 'tax', 'rc'];
+const documentTypes = ['puc', 'insurance', 'fitness', 'permit', 'tax', 'rc', 'pollution'];
 documentTypes.forEach(type => {
   const typeDir = path.join(uploadsDir, type);
   if (!fs.existsSync(typeDir)) {
@@ -68,7 +68,8 @@ const uploadDocuments = upload.fields([
   { name: 'permit_documents', maxCount: 5 },
   { name: 'tax_documents', maxCount: 5 },
   { name: 'rc_documents', maxCount: 5 },
-  { name: 'service_documents', maxCount: 5 }
+  { name: 'service_documents', maxCount: 5 },
+  { name: 'pollution_documents', maxCount: 5 }
 ]);
 
 module.exports = {

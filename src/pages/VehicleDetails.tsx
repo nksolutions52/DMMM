@@ -466,15 +466,33 @@ const VehicleDetails: React.FC = () => {
                     {data.documents?.rc && data.documents.rc.length > 0 && (
                       <Card className="mb-4">
                         <h4 className="font-semibold text-indigo-700 mb-2">RC Details</h4>
-                        <div className="flex flex-wrap gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                           {data.documents.rc.map((file: any) => (
-                            <div key={file.id} className="flex flex-col items-center">
-                              <img
-                                src={`http://localhost:5000/api/vehicles/documents/${file.id}/download`}
-                                alt={file.original_name}
-                                className="w-40 h-40 object-contain border rounded mb-2"
-                              />
-                              <div className="flex gap-2">
+                            <div key={file.id} className="bg-white rounded-lg border p-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center space-x-2 min-w-0 flex-1">
+                                  {getFileIcon(file.original_name, file.mime_type)}
+                                  <span className="text-sm text-gray-700 truncate" title={file.original_name}>
+                                    {file.original_name}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-xs text-gray-500 mb-3">
+                                {formatFileSize(file.file_size)} • {formatDate(file.created_at)}
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                {isImageFile(file.mime_type) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleImagePreview(file.id, file.mime_type)}
+                                    className="p-1 text-blue-600 hover:text-blue-800"
+                                    title="Preview"
+                                    isLoading={imageLoading}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                )}
                                 <Button
                                   variant="ghost"
                                   size="sm"
