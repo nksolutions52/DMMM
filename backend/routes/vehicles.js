@@ -29,7 +29,6 @@ router.get('/', authenticateToken, async (req, res) => {
       LEFT JOIN (
         SELECT * FROM insurance_details WHERE status = 'ACTIVE'
       ) i ON v.id = i.vehicle_id
-      -- add similar LEFT JOINs for other detail tables if needed
       WHERE 1=1
     `;
     
@@ -263,18 +262,51 @@ const saveDocumentFiles = async (client, vehicleId, files, userId) => {
   }
 };
 
+// Helper function to upsert detail records
+const upsertDetailRecord = async (client, table, vehicleId, data, userId) => {
+  if (!data || Object.keys(data).length === 0) return;
+
+  // Check if record exists
+  const existingRecord = await client.query(
+    `SELECT id FROM ${table} WHERE vehicle_id = $1 AND status = 'ACTIVE'`,
+    [vehicleId]
+  );
+
+  if (existingRecord.rows.length > 0) {
+    // Update existing record
+    const updateFields = Object.keys(data).map((key, index) => `${key} = $${index + 2}`).join(', ');
+    const updateValues = [vehicleId, ...Object.values(data)];
+    
+    await client.query(
+      `UPDATE ${table} SET ${updateFields}, updated_at = NOW() WHERE vehicle_id = $1 AND status = 'ACTIVE'`,
+      updateValues
+    );
+  } else {
+    // Insert new record
+    const fields = ['vehicle_id', ...Object.keys(data), 'status', 'created_by', 'created_at'];
+    const placeholders = fields.map((_, index) => `$${index + 1}`).join(', ');
+    const values = [vehicleId, ...Object.values(data), 'ACTIVE', userId, new Date()];
+    
+    await client.query(
+      `INSERT INTO ${table} (${fields.join(', ')}) VALUES (${placeholders})`,
+      values
+    );
+  }
+};
+
 // Create new vehicle with documents
 router.post('/', authenticateToken, uploadDocuments, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const vehicleData = req.body;
+    
     // Convert empty strings to null for optional fields
     Object.keys(vehicleData).forEach(key => {
       if (vehicleData[key] === '') vehicleData[key] = null;
     });
 
-    // Insert vehicle (add registration_valid_upto)
+    // Insert vehicle
     const vehicleQuery = `
       INSERT INTO vehicles (
         registration_number, date_of_registration, registration_valid_upto, subject, registering_authority, type, chassis_number, body_type, engine_number, colour, vehicle_class, fuel_used, makers_name, cubic_capacity, makers_classification, seating_capacity, month_year_of_manufacture, ulw, gvw, created_by, status
@@ -305,11 +337,11 @@ router.post('/', authenticateToken, uploadDocuments, async (req, res) => {
     ]);
 
     // Insert Hypothecation details if provided
-    if (vehicleData.isHPA || vehicleData.hypothecatedTo) {
-      await client.query(`
-        INSERT INTO hypothication_details (vehicle_id, is_hpa, hypothicated_to, status, created_by, created_at)
-        VALUES ($1, $2, $3, 'ACTIVE', $4, NOW())
-      `, [vehicleId, !!vehicleData.isHPA, vehicleData.hypothecatedTo || null, req.user.id]);
+    if (vehicleData.isHPA === 'true' || vehicleData.hypothecatedTo) {
+      await upsertDetailRecord(client, 'hypothication_details', vehicleId, {
+        is_hpa: vehicleData.isHPA === 'true',
+        hypothicated_to: vehicleData.hypothecatedTo || null
+      }, req.user.id);
     }
 
     // Save uploaded documents
@@ -317,48 +349,63 @@ router.post('/', authenticateToken, uploadDocuments, async (req, res) => {
 
     // Insert PUC details if provided
     if (vehicleData.pucNumber) {
-      await client.query(`
-        INSERT INTO puc_details (vehicle_id, puc_number, puc_date, puc_tenure, puc_from, puc_to, puc_contact_no, puc_address, status, created_by, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE', $9, NOW())
-      `, [vehicleId, vehicleData.pucNumber, vehicleData.pucDate, vehicleData.pucTenure,
-          vehicleData.pucFrom, vehicleData.pucTo, vehicleData.pucContactNo, vehicleData.pucAddress, req.user.id]);
+      await upsertDetailRecord(client, 'puc_details', vehicleId, {
+        puc_number: vehicleData.pucNumber,
+        puc_date: vehicleData.pucDate,
+        puc_tenure: vehicleData.pucTenure,
+        puc_from: vehicleData.pucFrom,
+        puc_to: vehicleData.pucTo,
+        puc_contact_no: vehicleData.pucContactNo,
+        puc_address: vehicleData.pucAddress
+      }, req.user.id);
     }
 
     // Insert Insurance details if provided
     if (vehicleData.insuranceCompanyName) {
-      await client.query(`
-        INSERT INTO insurance_details (vehicle_id, company_name, policy_number, insurance_type, insurance_date, insurance_tenure, insurance_from, insurance_to, insurance_contact_no, insurance_address, status, created_by, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE', $11, NOW())
-      `, [vehicleId, vehicleData.insuranceCompanyName, vehicleData.policyNumber, vehicleData.insuranceType,
-          vehicleData.insuranceDate, vehicleData.insuranceTenure, vehicleData.insuranceFrom,
-          vehicleData.insuranceTo, vehicleData.insuranceContactNo, vehicleData.insuranceAddress, req.user.id]);
+      await upsertDetailRecord(client, 'insurance_details', vehicleId, {
+        company_name: vehicleData.insuranceCompanyName,
+        policy_number: vehicleData.policyNumber,
+        insurance_type: vehicleData.insuranceType,
+        insurance_date: vehicleData.insuranceDate,
+        insurance_tenure: vehicleData.insuranceTenure,
+        insurance_from: vehicleData.insuranceFrom,
+        insurance_to: vehicleData.insuranceTo,
+        insurance_contact_no: vehicleData.insuranceContactNo,
+        insurance_address: vehicleData.insuranceAddress
+      }, req.user.id);
     }
 
     // Insert Fitness details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.fcNumber) {
-      await client.query(`
-        INSERT INTO fitness_details (vehicle_id, fc_number, fc_tenure_from, fc_tenure_to, fc_contact_no, fc_address, status, created_by, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', $7, NOW())
-      `, [vehicleId, vehicleData.fcNumber, vehicleData.fcTenureFrom, vehicleData.fcTenureTo,
-          vehicleData.fcContactNo, vehicleData.fcAddress, req.user.id]);
+      await upsertDetailRecord(client, 'fitness_details', vehicleId, {
+        fc_number: vehicleData.fcNumber,
+        fc_tenure_from: vehicleData.fcTenureFrom,
+        fc_tenure_to: vehicleData.fcTenureTo,
+        fc_contact_no: vehicleData.fcContactNo,
+        fc_address: vehicleData.fcAddress
+      }, req.user.id);
     }
 
     // Insert Permit details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.permitNumber) {
-      await client.query(`
-        INSERT INTO permit_details (vehicle_id, permit_number, permit_tenure_from, permit_tenure_to, permit_contact_no, permit_address, status, created_by, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', $7, NOW())
-      `, [vehicleId, vehicleData.permitNumber, vehicleData.permitTenureFrom, vehicleData.permitTenureTo,
-          vehicleData.permitContactNo, vehicleData.permitAddress, req.user.id]);
+      await upsertDetailRecord(client, 'permit_details', vehicleId, {
+        permit_number: vehicleData.permitNumber,
+        permit_tenure_from: vehicleData.permitTenureFrom,
+        permit_tenure_to: vehicleData.permitTenureTo,
+        permit_contact_no: vehicleData.permitContactNo,
+        permit_address: vehicleData.permitAddress
+      }, req.user.id);
     }
 
     // Insert Tax details if provided
     if (vehicleData.taxNumber) {
-      await client.query(`
-        INSERT INTO tax_details (vehicle_id, tax_number, tax_tenure_from, tax_tenure_to, tax_contact_no, tax_address, status, created_by, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', $7, NOW())
-      `, [vehicleId, vehicleData.taxNumber, vehicleData.taxTenureFrom, vehicleData.taxTenureTo,
-          vehicleData.taxContactNo, vehicleData.taxAddress, req.user.id]);
+      await upsertDetailRecord(client, 'tax_details', vehicleId, {
+        tax_number: vehicleData.taxNumber,
+        tax_tenure_from: vehicleData.taxTenureFrom,
+        tax_tenure_to: vehicleData.taxTenureTo,
+        tax_contact_no: vehicleData.taxContactNo,
+        tax_address: vehicleData.taxAddress
+      }, req.user.id);
     }
 
     await client.query('COMMIT');
@@ -396,7 +443,7 @@ router.put('/:id', authenticateToken, uploadDocuments, async (req, res) => {
       if (vehicleData[key] === '') vehicleData[key] = null;
     });
 
-    // Update vehicle (add registration_valid_upto)
+    // Update vehicle
     const vehicleQuery = `
       UPDATE vehicles
       SET
@@ -419,7 +466,8 @@ router.put('/:id', authenticateToken, uploadDocuments, async (req, res) => {
         month_year_of_manufacture = $17,
         ulw = $18,
         gvw = $19,
-        updated_by = $20
+        updated_by = $20,
+        updated_at = NOW()
       WHERE id = $21
     `;
     const vehicleValues = [
@@ -435,8 +483,9 @@ router.put('/:id', authenticateToken, uploadDocuments, async (req, res) => {
         mobile_number = $2,
         registered_owner_name = $3,
         guardian_info = $4,
-        address = $5
-      WHERE vehicle_id = $6
+        address = $5,
+        updated_at = NOW()
+      WHERE vehicle_id = $6 AND status = 'ACTIVE'
     `;
     await client.query(ownerQuery, [
       vehicleData.aadharNumber,
@@ -448,14 +497,11 @@ router.put('/:id', authenticateToken, uploadDocuments, async (req, res) => {
     ]);
 
     // Update Hypothecation details if provided
-    if (vehicleData.isHPA || vehicleData.hypothecatedTo) {
-      await client.query(`
-        INSERT INTO hypothication_details (vehicle_id, is_hpa, hypothicated_to, status)
-        VALUES ($1, $2, $3, 'ACTIVE')
-        ON CONFLICT (vehicle_id) DO UPDATE SET
-          is_hpa = EXCLUDED.is_hpa,
-          hypothicated_to = EXCLUDED.hypothicated_to
-      `, [id, !!vehicleData.isHPA, vehicleData.hypothecatedTo || null]);
+    if (vehicleData.isHPA === 'true' || vehicleData.hypothecatedTo) {
+      await upsertDetailRecord(client, 'hypothication_details', id, {
+        is_hpa: vehicleData.isHPA === 'true',
+        hypothicated_to: vehicleData.hypothecatedTo || null
+      }, req.user.id);
     }
 
     // Save uploaded documents
@@ -463,84 +509,63 @@ router.put('/:id', authenticateToken, uploadDocuments, async (req, res) => {
 
     // Update PUC details if provided
     if (vehicleData.pucNumber) {
-      await client.query(`
-        INSERT INTO puc_details (vehicle_id, puc_number, puc_date, puc_tenure, puc_from, puc_to, puc_contact_no, puc_address, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE')
-        ON CONFLICT (vehicle_id) DO UPDATE SET
-          puc_number = EXCLUDED.puc_number,
-          puc_date = EXCLUDED.puc_date,
-          puc_tenure = EXCLUDED.puc_tenure,
-          puc_from = EXCLUDED.puc_from,
-          puc_to = EXCLUDED.puc_to,
-          puc_contact_no = EXCLUDED.puc_contact_no,
-          puc_address = EXCLUDED.puc_address
-      `, [id, vehicleData.pucNumber, vehicleData.pucDate, vehicleData.pucTenure,
-          vehicleData.pucFrom, vehicleData.pucTo, vehicleData.pucContactNo, vehicleData.pucAddress]);
+      await upsertDetailRecord(client, 'puc_details', id, {
+        puc_number: vehicleData.pucNumber,
+        puc_date: vehicleData.pucDate,
+        puc_tenure: vehicleData.pucTenure,
+        puc_from: vehicleData.pucFrom,
+        puc_to: vehicleData.pucTo,
+        puc_contact_no: vehicleData.pucContactNo,
+        puc_address: vehicleData.pucAddress
+      }, req.user.id);
     }
 
     // Update Insurance details if provided
     if (vehicleData.insuranceCompanyName) {
-      await client.query(`
-        INSERT INTO insurance_details (vehicle_id, company_name, policy_number, insurance_type, insurance_date, insurance_tenure, insurance_from, insurance_to, insurance_contact_no, insurance_address, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE')
-        ON CONFLICT (vehicle_id) DO UPDATE SET
-          company_name = EXCLUDED.company_name,
-          policy_number = EXCLUDED.policy_number,
-          insurance_type = EXCLUDED.insurance_type,
-          insurance_date = EXCLUDED.insurance_date,
-          insurance_tenure = EXCLUDED.insurance_tenure,
-          insurance_from = EXCLUDED.insurance_from,
-          insurance_to = EXCLUDED.insurance_to,
-          insurance_contact_no = EXCLUDED.insurance_contact_no,
-          insurance_address = EXCLUDED.insurance_address
-      `, [id, vehicleData.insuranceCompanyName, vehicleData.policyNumber, vehicleData.insuranceType,
-          vehicleData.insuranceDate, vehicleData.insuranceTenure, vehicleData.insuranceFrom,
-          vehicleData.insuranceTo, vehicleData.insuranceContactNo, vehicleData.insuranceAddress]);
+      await upsertDetailRecord(client, 'insurance_details', id, {
+        company_name: vehicleData.insuranceCompanyName,
+        policy_number: vehicleData.policyNumber,
+        insurance_type: vehicleData.insuranceType,
+        insurance_date: vehicleData.insuranceDate,
+        insurance_tenure: vehicleData.insuranceTenure,
+        insurance_from: vehicleData.insuranceFrom,
+        insurance_to: vehicleData.insuranceTo,
+        insurance_contact_no: vehicleData.insuranceContactNo,
+        insurance_address: vehicleData.insuranceAddress
+      }, req.user.id);
     }
 
     // Update Fitness details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.fcNumber) {
-      await client.query(`
-        INSERT INTO fitness_details (vehicle_id, fc_number, fc_tenure_from, fc_tenure_to, fc_contact_no, fc_address, status)
-        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE')
-        ON CONFLICT (vehicle_id) DO UPDATE SET
-          fc_number = EXCLUDED.fc_number,
-          fc_tenure_from = EXCLUDED.fc_tenure_from,
-          fc_tenure_to = EXCLUDED.fc_tenure_to,
-          fc_contact_no = EXCLUDED.fc_contact_no,
-          fc_address = EXCLUDED.fc_address
-      `, [id, vehicleData.fcNumber, vehicleData.fcTenureFrom, vehicleData.fcTenureTo,
-          vehicleData.fcContactNo, vehicleData.fcAddress]);
+      await upsertDetailRecord(client, 'fitness_details', id, {
+        fc_number: vehicleData.fcNumber,
+        fc_tenure_from: vehicleData.fcTenureFrom,
+        fc_tenure_to: vehicleData.fcTenureTo,
+        fc_contact_no: vehicleData.fcContactNo,
+        fc_address: vehicleData.fcAddress
+      }, req.user.id);
     }
 
     // Update Permit details if Transport vehicle
     if (vehicleData.type === 'Transport' && vehicleData.permitNumber) {
-      await client.query(`
-        INSERT INTO permit_details (vehicle_id, permit_number, permit_tenure_from, permit_tenure_to, permit_contact_no, permit_address, status)
-        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE')
-        ON CONFLICT (vehicle_id) DO UPDATE SET
-          permit_number = EXCLUDED.permit_number,
-          permit_tenure_from = EXCLUDED.permit_tenure_from,
-          permit_tenure_to = EXCLUDED.permit_tenure_to,
-          permit_contact_no = EXCLUDED.permit_contact_no,
-          permit_address = EXCLUDED.permit_address
-      `, [id, vehicleData.permitNumber, vehicleData.permitTenureFrom, vehicleData.permitTenureTo,
-          vehicleData.permitContactNo, vehicleData.permitAddress]);
+      await upsertDetailRecord(client, 'permit_details', id, {
+        permit_number: vehicleData.permitNumber,
+        permit_tenure_from: vehicleData.permitTenureFrom,
+        permit_tenure_to: vehicleData.permitTenureTo,
+        permit_contact_no: vehicleData.permitContactNo,
+        permit_address: vehicleData.permitAddress
+      }, req.user.id);
     }
 
     // Update Tax details if provided
     if (vehicleData.taxNumber) {
-      await client.query(`
-        INSERT INTO tax_details (vehicle_id, tax_number, tax_tenure_from, tax_tenure_to, tax_contact_no, tax_address, status)
-        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE')
-        ON CONFLICT (vehicle_id) DO UPDATE SET
-          tax_number = EXCLUDED.tax_number,
-          tax_tenure_from = EXCLUDED.tax_tenure_from,
-          tax_tenure_to = EXCLUDED.tax_tenure_to,
-          tax_contact_no = EXCLUDED.tax_contact_no,
-          tax_address = EXCLUDED.tax_address
-      `, [id, vehicleData.taxNumber, vehicleData.taxTenureFrom, vehicleData.taxTenureTo,
-          vehicleData.taxContactNo, vehicleData.taxAddress]);
+      await upsertDetailRecord(client, 'tax_details', id, {
+        tax_number: vehicleData.taxNumber,
+        tax_tenure_from: vehicleData.taxTenureFrom,
+        tax_tenure_to: vehicleData.taxTenureTo,
+        tax_contact_no: vehicleData.taxContactNo,
+        tax_address: vehicleData.taxAddress
+      }, req.user.id);
     }
 
     await client.query('COMMIT');
