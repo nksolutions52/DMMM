@@ -520,6 +520,74 @@ const VehicleDetails: React.FC = () => {
         </div>
       </div>
 
+      {/* RC Details Section - Always show as separate section */}
+      <Card className="mb-6">
+        <h3 className="text-lg font-medium text-gray-800 mb-4">RC Details</h3>
+        {data.documents?.rc && data.documents.rc.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {data.documents.rc.map((file: any) => (
+              <div key={file.id} className="bg-gray-50 rounded-lg border p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <Image className="h-5 w-5 text-blue-600" />
+                    <span className="text-sm font-medium text-gray-700">RC Document</span>
+                  </div>
+                </div>
+                
+                {/* Image Preview */}
+                <div className="mb-3">
+                  <img
+                    src={`http://localhost:5000/api/vehicles/documents/${file.id}/download`}
+                    alt={file.original_name}
+                    className="w-full h-32 object-contain border rounded bg-white cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => handleImagePreview(file.id, file.mime_type)}
+                  />
+                </div>
+                
+                <div className="text-xs text-gray-500 mb-3">
+                  {file.original_name} • {formatFileSize(file.file_size)}
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleImagePreview(file.id, file.mime_type)}
+                    className="p-1 text-blue-600 hover:text-blue-800"
+                    title="Preview"
+                    isLoading={imageLoading}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDownloadDocument(file.id, file.original_name)}
+                    className="p-1 text-green-600 hover:text-green-800"
+                    title="Download"
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteDocument(file.id)}
+                    className="p-1 text-red-600 hover:text-red-800"
+                    title="Delete"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <p>No RC document uploaded for this vehicle.</p>
+          </div>
+        )}
+      </Card>
       {/* Image Preview Modal */}
       {selectedImage && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">

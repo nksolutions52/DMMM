@@ -998,10 +998,13 @@ const VehicleForm: React.FC = () => {
                 )}
                 
                 {/* RC Details - New Section */}
-                <AccordionItem key="rc" title="RC Details">
+                <AccordionItem key="rc" title="RC Document">
                   <div className="mb-6">
+                    <p className="text-sm text-gray-600 mb-4">
+                      Upload the Registration Certificate (RC) document. Only image files are accepted.
+                    </p>
                     <FileUpload
-                      label="RC Document (Image Only)"
+                      label="RC Document"
                       name="rc_documents"
                       accept="image/*"
                       existingFiles={vehicle?.documents?.rc || []}
