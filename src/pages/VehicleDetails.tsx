@@ -463,7 +463,7 @@ const VehicleDetails: React.FC = () => {
                       </div>
                     )}
                     {/* RC Details Section (if exists) */}
-                    {/* {data.documents?.rc && data.documents.rc.length > 0 && (
+                    {data.documents?.rc && data.documents.rc.length > 0 && (
                       <Card className="mb-4">
                         <h4 className="font-semibold text-indigo-700 mb-2">RC Details</h4>
                         <div className="flex flex-wrap gap-4">
@@ -498,7 +498,7 @@ const VehicleDetails: React.FC = () => {
                           ))}
                         </div>
                       </Card>
-                    )} */}
+                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
@@ -521,7 +521,7 @@ const VehicleDetails: React.FC = () => {
       </div>
 
       {/* RC Details Section - Always show as separate section */}
-      {/* <Card className="mb-6">
+      <Card className="mb-6">
         <h3 className="text-lg font-medium text-gray-800 mb-4">RC Details</h3>
         {data.documents?.rc && data.documents.rc.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -534,7 +534,7 @@ const VehicleDetails: React.FC = () => {
                   </div>
                 </div>
                 
-               
+                {/* Image Preview */}
                 <div className="mb-3">
                   <img
                     src={`http://localhost:5000/api/vehicles/documents/${file.id}/download`}
@@ -587,7 +587,7 @@ const VehicleDetails: React.FC = () => {
             <p>No RC document uploaded for this vehicle.</p>
           </div>
         )}
-      </Card> */}
+      </Card>
       {/* Image Preview Modal */}
       {selectedImage && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
