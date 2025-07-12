@@ -2,6 +2,7 @@ const express = require('express');
 const pool = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
 const { validateRequest, schemas } = require('../middleware/validation');
+const { uploadDocuments } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -502,6 +503,122 @@ router.patch('/orders/:id/complete', authenticateToken, async (req, res) => {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Complete order error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error', error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Complete service order with documents
+router.patch('/orders/:id/complete-with-documents', authenticateToken, uploadDocuments, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { id } = req.params;
+    const { fromDate, toDate, number, serviceType } = req.body;
+
+    // Get order and vehicle info
+    const orderResult = await client.query('SELECT * FROM service_orders WHERE id = $1', [id]);
+    if (orderResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Service order not found' });
+    }
+    const order = orderResult.rows[0];
+
+    // Use serviceType from body if provided, else from DB
+    const typeToUse = (serviceType || order.service_type || '').toLowerCase();
+
+    console.log('Complete order with documents: typeToUse=', typeToUse, 'number=', number, 'fromDate=', fromDate, 'toDate=', toDate);
+
+    // Update order status
+    await client.query('UPDATE service_orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['completed', id]);
+
+    // Handle document upload and status management
+    if (req.files && req.files.service_documents) {
+      const documentType = typeToUse; // Use service type as document type
+      
+      // Set existing documents to INACTIVE
+      await client.query(
+        'UPDATE vehicle_documents SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE vehicle_id = $2 AND document_type = $3 AND status = $4',
+        ['INACTIVE', order.vehicle_id, documentType, 'ACTIVE']
+      );
+
+      // Save new documents as ACTIVE
+      for (const file of req.files.service_documents) {
+        await client.query(`
+          INSERT INTO vehicle_documents (
+            vehicle_id, document_type, file_name, file_path, file_size, 
+            mime_type, original_name, uploaded_by, status, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+        `, [
+          order.vehicle_id,
+          documentType,
+          file.filename,
+          file.path,
+          file.size,
+          file.mimetype,
+          file.originalname,
+          req.user.id,
+          'ACTIVE'
+        ]);
+      }
+    }
+
+    // Prepare update and insert queries for the details table
+    let updateOldQuery = null;
+    let insertNewQuery = null;
+    let updateParams = null;
+    let insertParams = null;
+
+    switch (typeToUse) {
+      case 'fitness':
+        updateOldQuery = `UPDATE fitness_details SET status = 'INACTIVE' WHERE vehicle_id = $1 AND status = 'ACTIVE'`;
+        insertNewQuery = `INSERT INTO fitness_details (vehicle_id, fc_number, fc_tenure_from, fc_tenure_to, status, created_by, created_at) VALUES ($1, $2, $3, $4, 'ACTIVE', $5, CURRENT_TIMESTAMP)`;
+        updateParams = [order.vehicle_id];
+        insertParams = [order.vehicle_id, number, fromDate, toDate, req.user.id];
+        break;
+      case 'insurance':
+        updateOldQuery = `UPDATE insurance_details SET status = 'INACTIVE' WHERE vehicle_id = $1 AND status = 'ACTIVE'`;
+        insertNewQuery = `INSERT INTO insurance_details (vehicle_id, policy_number, insurance_from, insurance_to, status, created_by, created_at) VALUES ($1, $2, $3, $4, 'ACTIVE', $5, CURRENT_TIMESTAMP)`;
+        updateParams = [order.vehicle_id];
+        insertParams = [order.vehicle_id, number, fromDate, toDate, req.user.id];
+        break;
+      case 'permit':
+        updateOldQuery = `UPDATE permit_details SET status = 'INACTIVE' WHERE vehicle_id = $1 AND status = 'ACTIVE'`;
+        insertNewQuery = `INSERT INTO permit_details (vehicle_id, permit_number, permit_tenure_from, permit_tenure_to, status, created_by, created_at) VALUES ($1, $2, $3, $4, 'ACTIVE', $5, CURRENT_TIMESTAMP)`;
+        updateParams = [order.vehicle_id];
+        insertParams = [order.vehicle_id, number, fromDate, toDate, req.user.id];
+        break;
+      case 'pollution':
+      case 'puc':
+        updateOldQuery = `UPDATE puc_details SET status = 'INACTIVE' WHERE vehicle_id = $1 AND status = 'ACTIVE'`;
+        insertNewQuery = `INSERT INTO puc_details (vehicle_id, puc_number, puc_from, puc_to, status, created_by, created_at) VALUES ($1, $2, $3, $4, 'ACTIVE', $5, CURRENT_TIMESTAMP)`;
+        updateParams = [order.vehicle_id];
+        insertParams = [order.vehicle_id, number, fromDate, toDate, req.user.id];
+        break;
+      case 'tax':
+        updateOldQuery = `UPDATE tax_details SET status = 'INACTIVE' WHERE vehicle_id = $1 AND status = 'ACTIVE'`;
+        insertNewQuery = `INSERT INTO tax_details (vehicle_id, tax_number, tax_tenure_from, tax_tenure_to, status, created_by, created_at) VALUES ($1, $2, $3, $4, 'ACTIVE', $5, CURRENT_TIMESTAMP)`;
+        updateParams = [order.vehicle_id];
+        insertParams = [order.vehicle_id, number, fromDate, toDate, req.user.id];
+        break;
+      default:
+        break;
+    }
+
+    if (updateOldQuery) {
+      const updateResult = await client.query(updateOldQuery, updateParams);
+      console.log('Old records set to INACTIVE:', updateResult.rowCount);
+    }
+    if (insertNewQuery) {
+      const insertResult = await client.query(insertNewQuery, insertParams);
+      console.log('Inserted new record:', insertResult.rowCount);
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Order completed with documents and record created' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Complete order with documents error:', error);
     res.status(500).json({ success: false, message: 'Internal server error', error: error.message });
   } finally {
     client.release();

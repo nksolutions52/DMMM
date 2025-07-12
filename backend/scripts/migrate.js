@@ -217,13 +217,14 @@ const createTables = async () => {
       CREATE TABLE IF NOT EXISTS vehicle_documents (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         vehicle_id UUID REFERENCES vehicles(id) ON DELETE CASCADE,
-        document_type VARCHAR(50) NOT NULL CHECK (document_type IN ('puc', 'insurance', 'fitness', 'permit', 'tax', 'rc')),
+        document_type VARCHAR(50) NOT NULL CHECK (document_type IN ('puc', 'insurance', 'fitness', 'permit', 'tax', 'rc', 'pollution')),
         file_name VARCHAR(255) NOT NULL,
         file_path VARCHAR(500) NOT NULL,
         file_size INTEGER,
         mime_type VARCHAR(100),
         original_name VARCHAR(255),
         uploaded_by UUID REFERENCES users(id),
+        status VARCHAR(20) DEFAULT 'ACTIVE',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -247,6 +248,42 @@ const createTables = async () => {
     await client.query('CREATE INDEX IF NOT EXISTS idx_vehicle_documents_vehicle_id ON vehicle_documents(vehicle_id)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_vehicle_documents_type ON vehicle_documents(document_type)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_vehicle_documents_created_at ON vehicle_documents(created_at)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_vehicle_documents_status ON vehicle_documents(status)');
+
+    // Add status column to existing vehicle_documents if it doesn't exist
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'vehicle_documents' AND column_name = 'status'
+        ) THEN
+          ALTER TABLE vehicle_documents ADD COLUMN status VARCHAR(20) DEFAULT 'ACTIVE';
+        END IF;
+      END $$;
+    `);
+
+    // Update document_type constraint to include pollution
+    await client.query(`
+      DO $$
+      BEGIN
+        -- Drop existing constraint if it exists
+        IF EXISTS (
+          SELECT 1 FROM information_schema.constraint_column_usage 
+          WHERE table_name = 'vehicle_documents' AND column_name = 'document_type'
+        ) THEN
+          ALTER TABLE vehicle_documents DROP CONSTRAINT IF EXISTS vehicle_documents_document_type_check;
+        END IF;
+        
+        -- Add new constraint
+        ALTER TABLE vehicle_documents ADD CONSTRAINT vehicle_documents_document_type_check 
+        CHECK (document_type IN ('puc', 'insurance', 'fitness', 'permit', 'tax', 'rc', 'pollution'));
+      EXCEPTION
+        WHEN OTHERS THEN
+          -- Ignore errors if constraint already exists or other issues
+          NULL;
+      END $$;
+    `);
 
     await client.query('BEGIN');
 

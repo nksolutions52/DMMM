@@ -147,7 +147,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const documentsQuery = `
       SELECT id, document_type, file_name, original_name, file_size, mime_type, created_at
       FROM vehicle_documents
-      WHERE vehicle_id = $1 AND status = 'ACTIVE'
+      WHERE vehicle_id = $1 AND (status = 'ACTIVE' OR status IS NULL)
       ORDER BY document_type, created_at DESC
     `;
 
@@ -245,12 +245,18 @@ const saveDocumentFiles = async (client, vehicleId, files, userId) => {
   for (const [fieldName, fileArray] of Object.entries(files)) {
     const documentType = fieldName.split('_')[0]; // Extract type from fieldname
     
+    // Set existing documents of this type to INACTIVE
+    await client.query(
+      'UPDATE vehicle_documents SET status = $1, updated_at = NOW() WHERE vehicle_id = $2 AND document_type = $3 AND status = $4',
+      ['INACTIVE', vehicleId, documentType, 'ACTIVE']
+    );
+    
     for (const file of fileArray) {
       await client.query(`
         INSERT INTO vehicle_documents (
           vehicle_id, document_type, file_name, file_path, file_size, 
-          mime_type, original_name, uploaded_by, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+          mime_type, original_name, uploaded_by, status, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
       `, [
         vehicleId,
         documentType,
@@ -259,7 +265,8 @@ const saveDocumentFiles = async (client, vehicleId, files, userId) => {
         file.size,
         file.mimetype,
         file.originalname,
-        userId
+        userId,
+        'ACTIVE'
       ]);
     }
   }

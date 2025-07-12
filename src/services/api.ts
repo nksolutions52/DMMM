@@ -257,6 +257,10 @@ export const servicesAPI = {
         ...(transferDetails || {})
       }),
     });
+  },
+
+  completeOrderWithDocuments: async (id: string, formData: FormData) => {
+    return await fileUpdateRequest(`/services/orders/${id}/complete-with-documents`, formData);
   }
 };
 

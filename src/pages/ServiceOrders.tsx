@@ -3,6 +3,7 @@ import MainLayout from '../components/layout/MainLayout';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
+import FileUpload from '../components/ui/FileUpload';
 import { Search, FileText, MoreVertical, X, Clock, CheckCircle, CreditCard, User } from 'lucide-react';
 import { useApi, useApiMutation } from '../hooks/useApi';
 import { servicesAPI } from '../services/api';
@@ -29,6 +30,7 @@ const ServiceOrders: React.FC = () => {
   const [transferGuardian, setTransferGuardian] = useState('');
   const [transferAddress, setTransferAddress] = useState('');
   const [hpaHypothecatedTo, setHpaHypothecatedTo] = useState('');
+  const [completeDocuments, setCompleteDocuments] = useState<FileList | null>(null);
 
   const { data: ordersData, loading, error, refetch } = useApi(
     () => servicesAPI.getOrders({ 
@@ -126,21 +128,29 @@ const ServiceOrders: React.FC = () => {
       return;
     }
     try {
-      // Call backend to update status and create service record
-      await updateOrderStatus(() =>
-        servicesAPI.completeOrder(
-          selectedOrder.id,
-          completeFromDate,
-          completeToDate,
-          completeNumber,
-          selectedOrder.service_type // <-- pass this
-        )
-      );
+      // Create FormData for file upload
+      const formData = new FormData();
+      formData.append('fromDate', completeFromDate);
+      formData.append('toDate', completeToDate);
+      formData.append('number', completeNumber);
+      formData.append('serviceType', selectedOrder.service_type);
+      
+      // Add document files if any
+      if (completeDocuments) {
+        Array.from(completeDocuments).forEach(file => {
+          formData.append('service_documents', file);
+        });
+      }
+
+      // Call backend to update status and create service record with documents
+      await updateOrderStatus(() => servicesAPI.completeOrderWithDocuments(selectedOrder.id, formData));
+      
       setShowCompleteModal(false);
       setSelectedOrder(null);
       setCompleteFromDate("");
       setCompleteToDate("");
       setCompleteNumber("");
+      setCompleteDocuments(null);
       refetch();
     } catch (error) {
       console.error('Complete failed:', error);
@@ -870,6 +880,16 @@ const ServiceOrders: React.FC = () => {
               <div>
                 <label className="block text-gray-600 text-sm mb-1">To Date</label>
                 <input type="date" className="w-full border rounded px-3 py-2" value={completeToDate} onChange={e => setCompleteToDate(e.target.value)} />
+              </div>
+              <div className="mb-4">
+                <FileUpload
+                  label={`Upload ${selectedOrder.service_type} Documents`}
+                  name="service_documents"
+                  accept="image/*,.pdf"
+                  existingFiles={[]}
+                  onFilesChange={(files) => setCompleteDocuments(files)}
+                  maxFiles={5}
+                />
               </div>
               <div className="flex justify-end">
                 <button className="bg-blue-600 text-white px-4 py-2 rounded" onClick={handleSubmitComplete}>Submit</button>

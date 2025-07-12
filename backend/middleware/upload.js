@@ -67,7 +67,8 @@ const uploadDocuments = upload.fields([
   { name: 'fitness_documents', maxCount: 5 },
   { name: 'permit_documents', maxCount: 5 },
   { name: 'tax_documents', maxCount: 5 },
-  { name: 'rc_documents', maxCount: 5  }
+  { name: 'rc_documents', maxCount: 5 },
+  { name: 'service_documents', maxCount: 5 }
 ]);
 
 module.exports = {
