@@ -533,8 +533,8 @@ router.patch('/orders/:id/complete-with-documents', authenticateToken, uploadDoc
     await client.query('UPDATE service_orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['completed', id]);
 
     // Handle document upload and status management
-    if (req.files && req.files.service_documents) {
-      const documentType = typeToUse; // Use service type as document type
+    const handleDocumentUpload = async (files, documentType) => {
+      if (!files || files.length === 0) return;
       
       // Set existing documents to INACTIVE for this document type
       await client.query(
@@ -543,7 +543,7 @@ router.patch('/orders/:id/complete-with-documents', authenticateToken, uploadDoc
       );
 
       // Save new documents as ACTIVE
-      for (const file of req.files.service_documents) {
+      for (const file of files) {
         await client.query(`
           INSERT INTO vehicle_documents (
             vehicle_id, document_type, file_name, file_path, file_size, 
@@ -560,6 +560,20 @@ router.patch('/orders/:id/complete-with-documents', authenticateToken, uploadDoc
           req.user.id,
           'ACTIVE'
         ]);
+      }
+    };
+
+    // Handle documents based on service type
+    if (req.files) {
+      // Check for service_documents first (generic upload)
+      if (req.files.service_documents) {
+        await handleDocumentUpload(req.files.service_documents, typeToUse);
+      }
+      
+      // Check for specific document type uploads
+      const documentTypeKey = `${typeToUse}_documents`;
+      if (req.files[documentTypeKey]) {
+        await handleDocumentUpload(req.files[documentTypeKey], typeToUse);
       }
     }
 

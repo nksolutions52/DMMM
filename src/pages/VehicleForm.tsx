@@ -114,11 +114,15 @@ const VehicleForm: React.FC = () => {
   const [activeTab, setActiveTab] = useState("personal");
   const [form, setForm] = useState(initialState);
   const [documentFiles, setDocumentFiles] = useState<{[key: string]: FileList | null}>({
-    puc_documents: null,
     insurance_documents: null,
     fitness_documents: null,
     permit_documents: null,
-    tax_documents: null
+    tax_documents: null,
+    pollution_documents: null,
+    transfer_documents: null,
+    hpa_documents: null,
+    hpt_documents: null,
+    rc_documents: null
   });
 
   // Only fetch vehicle data if we have an ID (editing mode)
@@ -659,7 +663,7 @@ const VehicleForm: React.FC = () => {
               <Accordion allowMultiple>
                 {/* PUC */}
                 {(form.type === "Non Transport" || form.type === "Transport") && (
-                  <AccordionItem key="puc" title="PUC Particulars">
+                  <AccordionItem key="pollution" title="Pollution Certificate (PUC)">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
                       <Input
                         label="PUC NUMBER"
@@ -716,10 +720,10 @@ const VehicleForm: React.FC = () => {
                       </div>
                     </div>
                     <FileUpload
-                      label="PUC Documents"
-                      name="puc_documents"
-                      existingFiles={vehicle?.documents?.puc || []}
-                      onFilesChange={(files) => handleFileChange('puc_documents', files)}
+                      label="Pollution Certificate Documents"
+                      name="pollution_documents"
+                      existingFiles={vehicle?.documents?.pollution || []}
+                      onFilesChange={(files) => handleFileChange('pollution_documents', files)}
                       onDeleteExisting={handleDeleteExistingDocument}
                     />
                   </AccordionItem>

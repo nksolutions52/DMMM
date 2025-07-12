@@ -277,7 +277,7 @@ const createTables = async () => {
         
         -- Add new constraint
         ALTER TABLE vehicle_documents ADD CONSTRAINT vehicle_documents_document_type_check 
-        CHECK (document_type IN ('puc', 'insurance', 'fitness', 'permit', 'tax', 'rc', 'pollution'));
+        CHECK (document_type IN ('insurance', 'fitness', 'permit', 'tax', 'rc', 'pollution', 'transfer', 'hpa', 'hpt'));
       EXCEPTION
         WHEN OTHERS THEN
           -- Ignore errors if constraint already exists or other issues

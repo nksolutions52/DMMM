@@ -9,7 +9,7 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // Create subdirectories for different document types
-const documentTypes = ['puc', 'insurance', 'fitness', 'permit', 'tax', 'rc', 'pollution', 'service'];
+const documentTypes = ['insurance', 'fitness', 'permit', 'tax', 'rc', 'pollution', 'transfer', 'hpa', 'hpt'];
 documentTypes.forEach(type => {
   const typeDir = path.join(uploadsDir, type);
   if (!fs.existsSync(typeDir)) {
@@ -20,15 +20,27 @@ documentTypes.forEach(type => {
 // Configure multer storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Extract document type from fieldname (e.g., 'puc_documents', 'insurance_documents')
-    const documentType = file.fieldname.split('_')[0];
+    // Extract document type from fieldname (e.g., 'insurance_documents', 'service_documents')
+    let documentType = file.fieldname.split('_')[0];
+    
+    // Map service_documents to the actual service type if provided
+    if (documentType === 'service' && req.body.serviceType) {
+      documentType = req.body.serviceType.toLowerCase();
+    }
+    
     const uploadPath = path.join(uploadsDir, documentType);
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
     // Generate unique filename: vehicleId_documentType_timestamp_originalname
     const vehicleId = req.body.vehicleId || 'new';
-    const documentType = file.fieldname.split('_')[0];
+    let documentType = file.fieldname.split('_')[0];
+    
+    // Map service_documents to the actual service type if provided
+    if (documentType === 'service' && req.body.serviceType) {
+      documentType = req.body.serviceType.toLowerCase();
+    }
+    
     const timestamp = Date.now();
     const ext = path.extname(file.originalname);
     const name = path.basename(file.originalname, ext);
@@ -62,14 +74,16 @@ const upload = multer({
 
 // Middleware to handle multiple document types
 const uploadDocuments = upload.fields([
-  { name: 'puc_documents', maxCount: 5 },
   { name: 'insurance_documents', maxCount: 5 },
   { name: 'fitness_documents', maxCount: 5 },
   { name: 'permit_documents', maxCount: 5 },
   { name: 'tax_documents', maxCount: 5 },
   { name: 'rc_documents', maxCount: 5 },
-  { name: 'service_documents', maxCount: 5 },
-  { name: 'pollution_documents', maxCount: 5 }
+  { name: 'pollution_documents', maxCount: 5 },
+  { name: 'transfer_documents', maxCount: 5 },
+  { name: 'hpa_documents', maxCount: 5 },
+  { name: 'hpt_documents', maxCount: 5 },
+  { name: 'service_documents', maxCount: 5 }
 ]);
 
 module.exports = {
