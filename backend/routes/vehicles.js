@@ -186,7 +186,7 @@ router.get('/search/:registrationNumber', authenticateToken, async (req, res) =>
     const { registrationNumber } = req.params;
 
     const query = `
-      SELECT v.*, 
+      SELECT v.*, o.aadhar_number, o.mobile_number, o.registered_owner_name, o.guardian_info, o.address,
              p.puc_number, p.puc_date, p.puc_tenure, p.puc_from, p.puc_to, p.puc_contact_no, p.puc_address,
              i.company_name as insurance_company_name, i.policy_number, i.insurance_type,
              i.insurance_date, i.insurance_tenure, i.insurance_from, i.insurance_to, 
@@ -195,6 +195,9 @@ router.get('/search/:registrationNumber', authenticateToken, async (req, res) =>
              pr.permit_number, pr.permit_tenure_from, pr.permit_tenure_to, pr.permit_contact_no, pr.permit_address,
              t.tax_number, t.tax_tenure_from, t.tax_tenure_to, t.tax_contact_no, t.tax_address
       FROM vehicles v
+      LEFT JOIN (
+        SELECT * FROM vehicle_owner_details WHERE status = 'ACTIVE'
+      ) o ON v.id = o.vehicle_id
       LEFT JOIN (
         SELECT * FROM puc_details WHERE status = 'ACTIVE'
       ) p ON v.id = p.vehicle_id
@@ -625,6 +628,88 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     });
   } finally {
     client.release();
+  }
+});
+
+// Download document
+router.get('/documents/:id/download', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get document info
+    const documentQuery = 'SELECT * FROM vehicle_documents WHERE id = $1';
+    const documentResult = await pool.query(documentQuery, [id]);
+
+    if (documentResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Document not found'
+      });
+    }
+
+    const document = documentResult.rows[0];
+    const filePath = path.join(__dirname, '../uploads', document.document_type, document.file_name);
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'File not found on server'
+      });
+    }
+
+    // Set appropriate headers
+    res.setHeader('Content-Type', document.mime_type);
+    res.setHeader('Content-Disposition', `attachment; filename="${document.original_name}"`);
+
+    // Send file
+    res.sendFile(filePath);
+  } catch (error) {
+    console.error('Download document error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Delete document
+router.delete('/documents/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get document info
+    const documentQuery = 'SELECT * FROM vehicle_documents WHERE id = $1';
+    const documentResult = await pool.query(documentQuery, [id]);
+
+    if (documentResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Document not found'
+      });
+    }
+
+    const document = documentResult.rows[0];
+    const filePath = path.join(__dirname, '../uploads', document.document_type, document.file_name);
+
+    // Delete file from filesystem
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    // Delete from database
+    await pool.query('DELETE FROM vehicle_documents WHERE id = $1', [id]);
+
+    res.json({
+      success: true,
+      message: 'Document deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete document error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
   }
 });
 
