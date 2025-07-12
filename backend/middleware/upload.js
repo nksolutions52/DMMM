@@ -9,7 +9,7 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // Create subdirectories for different document types
-const documentTypes = ['puc', 'insurance', 'fitness', 'permit', 'tax', 'rc', 'pollution'];
+const documentTypes = ['puc', 'insurance', 'fitness', 'permit', 'tax', 'rc', 'pollution', 'service'];
 documentTypes.forEach(type => {
   const typeDir = path.join(uploadsDir, type);
   if (!fs.existsSync(typeDir)) {

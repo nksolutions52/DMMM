@@ -145,10 +145,9 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
     // Get vehicle documents
     const documentsQuery = `
-      SELECT id, document_type, file_name, original_name, file_size, mime_type, created_at
-      FROM vehicle_documents
+      SELECT * FROM vehicle_documents
       WHERE vehicle_id = $1 AND status = 'ACTIVE'
-      ORDER BY document_type, created_at DESC
+      ORDER BY created_at DESC
     `;
 
     const documentsResult = await pool.query(documentsQuery, [id]);

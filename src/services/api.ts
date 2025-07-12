@@ -75,7 +75,7 @@ const fileUpdateRequest = async (endpoint: string, formData: FormData) => {
   
   try {
     const response = await fetch(url, {
-      method: 'PUT',
+      method: 'PATCH', // <-- Change from PUT to PATCH
       headers: getFileUploadHeaders(),
       body: formData,
     });
