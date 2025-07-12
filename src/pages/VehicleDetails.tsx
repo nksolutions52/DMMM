@@ -462,6 +462,43 @@ const VehicleDetails: React.FC = () => {
                         <p>No documents uploaded for this vehicle.</p>
                       </div>
                     )}
+                    {/* RC Details Section (if exists) */}
+                    {data.documents?.rc && data.documents.rc.length > 0 && (
+                      <Card className="mb-4">
+                        <h4 className="font-semibold text-indigo-700 mb-2">RC Details</h4>
+                        <div className="flex flex-wrap gap-4">
+                          {data.documents.rc.map((file: any) => (
+                            <div key={file.id} className="flex flex-col items-center">
+                              <img
+                                src={`http://localhost:5000/api/vehicles/documents/${file.id}/download`}
+                                alt={file.original_name}
+                                className="w-40 h-40 object-contain border rounded mb-2"
+                              />
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDownloadDocument(file.id, file.original_name)}
+                                  className="p-1 text-green-600 hover:text-green-800"
+                                  title="Download"
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteDocument(file.id)}
+                                  className="p-1 text-red-600 hover:text-red-800"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </Card>
+                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">

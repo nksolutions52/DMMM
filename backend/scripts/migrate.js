@@ -217,7 +217,7 @@ const createTables = async () => {
       CREATE TABLE IF NOT EXISTS vehicle_documents (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         vehicle_id UUID REFERENCES vehicles(id) ON DELETE CASCADE,
-        document_type VARCHAR(50) NOT NULL CHECK (document_type IN ('puc', 'insurance', 'fitness', 'permit', 'tax')),
+        document_type VARCHAR(50) NOT NULL CHECK (document_type IN ('puc', 'insurance', 'fitness', 'permit', 'tax', 'rc')),
         file_name VARCHAR(255) NOT NULL,
         file_path VARCHAR(500) NOT NULL,
         file_size INTEGER,
@@ -228,6 +228,25 @@ const createTables = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Add unique constraint for upsert support
+    await client.query(`
+      DO $$
+      BEGIN
+          IF NOT EXISTS (
+              SELECT 1 FROM pg_constraint WHERE conname = 'vehicle_documents_vehicle_id_document_type_unique'
+          ) THEN
+              ALTER TABLE vehicle_documents
+              ADD CONSTRAINT vehicle_documents_vehicle_id_document_type_unique
+              UNIQUE (vehicle_id, document_type);
+          END IF;
+      END$$;
+    `);
+
+    // Add indexes for better performance
+    await client.query('CREATE INDEX IF NOT EXISTS idx_vehicle_documents_vehicle_id ON vehicle_documents(vehicle_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_vehicle_documents_type ON vehicle_documents(document_type)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_vehicle_documents_created_at ON vehicle_documents(created_at)');
 
     await client.query('BEGIN');
 

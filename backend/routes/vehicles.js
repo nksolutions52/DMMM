@@ -247,8 +247,8 @@ const saveDocumentFiles = async (client, vehicleId, files, userId) => {
       await client.query(`
         INSERT INTO vehicle_documents (
           vehicle_id, document_type, file_name, file_path, file_size, 
-          mime_type, original_name, uploaded_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          mime_type, original_name, uploaded_by, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
       `, [
         vehicleId,
         documentType,

@@ -996,6 +996,21 @@ const VehicleForm: React.FC = () => {
                     />
                   </AccordionItem>
                 )}
+                
+                {/* RC Details - New Section */}
+                <AccordionItem key="rc" title="RC Details">
+                  <div className="mb-6">
+                    <FileUpload
+                      label="RC Document (Image Only)"
+                      name="rc_documents"
+                      accept="image/*"
+                      existingFiles={vehicle?.documents?.rc || []}
+                      onFilesChange={(files) => handleFileChange('rc_documents', files)}
+                      onDeleteExisting={handleDeleteExistingDocument}
+                      maxFiles={1}
+                    />
+                  </div>
+                </AccordionItem>
               </Accordion>
 
               <div className="flex justify-end mt-6">
