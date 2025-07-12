@@ -118,6 +118,9 @@ const ServiceOrders: React.FC = () => {
       case 'permit': return 'Permit Number';
       case 'pollution': return 'PUC Number';
       case 'tax': return 'Tax Number';
+      case 'transfer': return 'Transfer Number';
+      case 'hpa': return 'HPA Number';
+      case 'hpt': return 'HPT Number';
       default: return 'Number';
     }
   };

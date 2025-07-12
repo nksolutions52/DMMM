@@ -4,27 +4,27 @@ const RENEWAL_TYPES = [
   {
     table: 'puc_details',
     toDateCol: 'puc_to',
-    renewalType: 'PUC'
+    renewalType: 'POLLUTION'
   },
   {
     table: 'insurance_details',
     toDateCol: 'insurance_to',
-    renewalType: 'Insurance'
+    renewalType: 'INSURANCE'
   },
   {
     table: 'permit_details',
     toDateCol: 'permit_tenure_to',
-    renewalType: 'Permit'
+    renewalType: 'PERMIT'
   },
   {
     table: 'fitness_details',
     toDateCol: 'fc_tenure_to',
-    renewalType: 'FC'
+    renewalType: 'FITNESS'
   },
   {
     table: 'tax_details',
     toDateCol: 'tax_tenure_to',
-    renewalType: 'Tax'
+    renewalType: 'TAX'
   }
 ];
 

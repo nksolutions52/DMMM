@@ -242,7 +242,12 @@ const saveDocumentFiles = async (client, vehicleId, files, userId) => {
   if (!files) return;
 
   for (const [fieldName, fileArray] of Object.entries(files)) {
-    const documentType = fieldName.split('_')[0]; // Extract type from fieldname
+    let documentType = fieldName.split('_')[0]; // Extract type from fieldname
+    
+    // Map puc to pollution for backward compatibility
+    if (documentType === 'puc') {
+      documentType = 'pollution';
+    }
     
     // Set existing documents of this type to INACTIVE
     await client.query(

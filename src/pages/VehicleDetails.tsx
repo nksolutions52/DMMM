@@ -400,7 +400,7 @@ const VehicleDetails: React.FC = () => {
                           {Object.entries(data.documents).map(([docType, files]) => (
                             <div key={docType} className="bg-gray-50 rounded-lg p-4">
                               <h5 className="font-medium text-gray-700 mb-3 capitalize">
-                                {docType} Documents ({files.length})
+                                {docType === 'pollution' ? 'PUC' : docType} Documents ({files.length})
                               </h5>
                               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                 {files.map((file) => (
